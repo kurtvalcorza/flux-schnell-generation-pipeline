@@ -82,7 +82,7 @@ Tests are offline: temporary manifests, synthetic images, an injected fetcher an
 
 ## Release status
 
-**Candidate** — the E2E carrier, its tests, the generator parity and the release-asset validation are in place; promotion to Release-grade follows the exact committed notebook blob executing top-to-bottom in a clean Kaggle Tesla T4 runtime with no repository checkout (`docs/release-verification.md`). The DIMER upload of the weights stays on HOLD by decision (2026-09-20). Static and unit checks are necessary but are never the evidence.
+**Release-grade** — the `E2E` notebook blob `52226812` (committed at `d4fdf72`) executed top-to-bottom in a clean Kaggle Tesla T4 runtime on 2026-09-20 (11/11 code cells ok (1 restart after the install cell), 2911.9 s, 130 files / 34,341 MB fetched and digest-verified inside the notebook (the 23-file FLUX snapshot from the mirror, the 9-file scorer, the 60 pinned photographs)); the record is in `docs/release-verification.md` and `STATUS.md`. Static and unit checks — including the standalone generator parity checks — are necessary but were never the evidence; the hosted run is. A later change to the carried modules or the notebook returns the status to Candidate until re-verified. The DIMER upload of the weights stays on HOLD by decision (2026-09-20). Static and unit checks are necessary but are never the evidence.
 
 ## Licensing
 

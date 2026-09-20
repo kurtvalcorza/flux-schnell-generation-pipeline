@@ -104,8 +104,9 @@ Before changing the registry status from `Candidate` to `Release-grade`:
    - `pipe.encode_prompts` reporting the encoders loaded in float16 on `cuda`, 7 prompts encoded (six captions and
      the new prompt), 0 truncations, finite embeddings of shape (256, 4096) and pooled vectors of shape (768,), and
      `release_text_encoder` returning `True` with the GPU memory back near zero;
-   - `pipe.load_transformer` reporting the 4-bit load (`quantization nf4`, 11,891,178,560 parameters as the checkpoint
-     counts them, 380 LoRA tensors) and the GPU memory after the load;
+   - `pipe.load_transformer` reporting the 4-bit load (`quantization nf4`, 11,900,517,440 parameters — the checkpoint's
+     11,891,178,560 counted at their original shapes plus the 9,338,880 of the attached LoRA — 380 LoRA tensors) and the
+     GPU memory after the load (about 6.5 GB);
    - the frozen model's held-out flow-matching MSE on the validation and test records, six 512² four-step generations
      scored by CLIP with `outputs/flux_schnell_generation_frozen_grid.jpg` written, and the real-photo ceiling on the
      test photographs;
@@ -140,16 +141,18 @@ A known-failing default path in the supported runtime blocks release (REL11).
 
 | Notebook | Commit / notebook blob | Date (UTC) | Executor | Outcome |
 |---|---|---|---|---|
-| `flux_schnell_generation_colab.ipynb` (`E2E`) | pending | — | Kaggle Tesla T4 (`kurtvalcorza/dimer-nb2-flux-schnell-generation`) | **Not yet executed** — the first clean run is queued behind the feasibility probe recorded below |
+| `flux_schnell_generation_colab.ipynb` (`E2E`) | `d4fdf72` / `52226812` | 2026-09-20 | Kaggle Tesla T4 (`kurtvalcorza/dimer-nb2-flux-schnell-generation` v2; image `torch 2.10.0+cu128` before the pinned install, `torch 2.14.0+cu130`, `diffusers 0.40.0`, `transformers 5.17.0`, `peft 0.21.0`, `bitsandbytes 0.50.2` after; Python 3.12.13) | **PASSED** — 11/11 code cells ok (1 restart after the install cell), 2911.9 s, 130 files / 34,341 MB fetched and digest-verified inside the notebook (the 23-file FLUX snapshot from the mirror, the 9-file scorer, the 60 pinned photographs); encoders loaded in 49.8 s and 7 prompts encoded in 3.3 s at 12.15 GB, released to 0.35 GB; 4-bit transformer loaded in 116.2 s at 6.52 GB (11,900,517,440 parameters with the 380 LoRA tensors attached); **frozen held-out flow-matching MSE validation 0.834244 / test 0.795300** (by σ 0.1..0.9: 1.073 / 0.955 / 0.750 / 0.593 / 0.606); six four-step generations in 43.6 s scored CLIP prompt similarity / label accuracy / reference similarity **31.08 / 0.667 / 71.95** against the real-photo ceiling 30.25 / 0.917 / 88.66; `adapt` 3 epochs, 108 steps, 1024.5 s, peak 12.23 GB: validation MSE 0.834244 → 0.594587 / 0.533845 / 0.523882 (best epoch 3; train loss 0.624 / 0.669 / 0.569); **adapted validation 0.523882, test 0.506942 (−0.288358 against the frozen model, an observation), generations 31.77 / 0.833 / 75.01**; the new prompt (a House Finch on a snow-covered branch) rendered twice in 14.6 s at CLIP prompt similarity 32.48; adapter 380 tensors / 37,404,064 bytes float32 (SHA-256 `34c3699a…`, `quantization nf4`); the adapted transformer released to 0.96 GB, the fresh 4-bit reload (`best_epoch 3`) reproduced the held-out MSE and the seeded image exactly (flow_matching_mse_diff 0.0, mean_abs_pixel_diff 0.0); run summary and executed notebook archived under `.agent/backups/tier-c-build-2026-09-20/kaggle-flux/dimer-nb2-flux-schnell-generation/v2/evidence/` in the workspace |
+| `flux_schnell_generation_colab.ipynb` (`E2E`) | `77567b7` / `5c82c199` | 2026-09-20 | Kaggle Tesla T4 (`kurtvalcorza/dimer-nb2-flux-schnell-generation` v1) | **FAILED at the model cell** — install, restart and the carried modules ok; the 23-file snapshot staged from the mirror and sha256-verified (358 s), then `verify_scorer_snapshot` refused `README.md: unexpected file type in a code-free snapshot` because `SNAPSHOT_FILE_SUFFIXES` lacked `.md`; fixed in `d4fdf72` with an offline test that asserts every committed manifest entry passes the rule; no model loaded |
 
 ## Feasibility probe (not a notebook execution)
 
-Before the notebook was run, a throwaway Kaggle kernel (`kurtvalcorza/dimer-probe-flux-schnell-qlora`, Tesla T4) staged
-the 23 pinned files from the mirror with SHA-256 verification, encoded one prompt with the float16 text encoders,
-released them, loaded the transformer 4-bit, generated one 512² image in 4 steps, attached a rank-8 LoRA and ran three
-flow-matching training steps with gradient checkpointing — once with float16 compute and once with bfloat16 (emulated on
-a T4) — printing staging time, load time, generation time, per-step time, peak memory and finiteness. Its outcome is
-recorded here when it completes; it is engineering evidence for the recipe, not release evidence for the notebook.
+Before the notebook was run, a throwaway Kaggle kernel (`kurtvalcorza/dimer-probe-flux-schnell-qlora`, Tesla T4, 2026-09-20)
+staged the 23 pinned files from the mirror with SHA-256 verification (608.6 s), encoded one prompt with the float16 text
+encoders (46.5 s, peak 11,329 MiB, finite), released them, loaded the transformer 4-bit (99.6 s, 6,563 MiB), generated one
+512² image in 4 steps (5.2 s, finite, a recognisable bird), attached the rank-8 LoRA (380 tensors, 9,338,880 parameters)
+and ran three flow-matching training steps with gradient checkpointing (4.2 / 3.8 / 3.8 s, loss 0.59..0.60, peak 7,423 MiB)
+with float16 compute; the bfloat16 branch ran out of memory at load because the float16 branch's tensors were still held
+(a probe artefact; the T4 has no native bfloat16 in any case). Engineering evidence for the recipe, not release evidence.
 
 ## Recorded executions
 
@@ -160,11 +163,14 @@ runtime, not general estimates.
 
 | Date (UTC) | Commit / notebook blob | Executor | Path exercised | Wall | Outcome |
 |---|---|---|---|---|---|
-| — | pending | Kaggle Tesla T4 | Default sample path, `Run all` from a fresh interpreter with an empty Hugging Face cache and no repository checkout | — | **Not yet executed** |
+| 2026-09-20 | `d4fdf72` / `52226812` | Kaggle Tesla T4 (`kurtvalcorza/dimer-nb2-flux-schnell-generation` v2; image `torch 2.10.0+cu128` before the pinned install, `torch 2.14.0+cu130`, `diffusers 0.40.0`, `transformers 5.17.0`, `peft 0.21.0`, `bitsandbytes 0.50.2` after; Python 3.12.13, `cuda`) | Default sample path, `Run all` from a fresh interpreter with an empty Hugging Face cache and no repository checkout (blob SHA-1 verified against GitHub before execution); the snapshot staged from the mirror and digest-verified by the notebook, the scorer and the pinned photographs fetched by the notebook | 2911.9 s | **PASSED** — 11/11 code cells ok (1 restart after the install cell), 2911.9 s, 130 files / 34,341 MB fetched and digest-verified inside the notebook (the 23-file FLUX snapshot from the mirror, the 9-file scorer, the 60 pinned photographs); per-cell: install 27 s (then restart), stage + verify 536 s, sample 30 s, encode + release 54 s, 4-bit load + frozen evaluation + generations 364 s, `adapt` 1025 s, adapted evaluation + generations 251 s, new prompt + export + release + reload 432 s; encoders loaded in 49.8 s and 7 prompts encoded in 3.3 s at 12.15 GB, released to 0.35 GB; 4-bit transformer loaded in 116.2 s at 6.52 GB (11,900,517,440 parameters with the 380 LoRA tensors attached); **frozen held-out flow-matching MSE validation 0.834244 / test 0.795300** (by σ 0.1..0.9: 1.073 / 0.955 / 0.750 / 0.593 / 0.606); six four-step generations in 43.6 s scored CLIP prompt similarity / label accuracy / reference similarity **31.08 / 0.667 / 71.95** against the real-photo ceiling 30.25 / 0.917 / 88.66; `adapt` 3 epochs, 108 steps, 1024.5 s, peak 12.23 GB: validation MSE 0.834244 → 0.594587 / 0.533845 / 0.523882 (best epoch 3; train loss 0.624 / 0.669 / 0.569); **adapted validation 0.523882, test 0.506942 (−0.288358 against the frozen model, an observation), generations 31.77 / 0.833 / 75.01**; the new prompt (a House Finch on a snow-covered branch) rendered twice in 14.6 s at CLIP prompt similarity 32.48; adapter 380 tensors / 37,404,064 bytes float32 (SHA-256 `34c3699a…`, `quantization nf4`); the adapted transformer released to 0.96 GB, the fresh 4-bit reload (`best_epoch 3`) reproduced the held-out MSE and the seeded image exactly (flow_matching_mse_diff 0.0, mean_abs_pixel_diff 0.0) |
+| 2026-09-20 | `77567b7` / `5c82c199` | Kaggle Tesla T4 (`kurtvalcorza/dimer-nb2-flux-schnell-generation` v1) | Default sample path, same executor | — | **FAILED at the model cell** — the 23-file snapshot staged and digest-verified in 358 s, then the scorer manifest refused on `README.md` (suffix rule; fixed in `d4fdf72`) |
 
 ## Current status
 
-**Candidate.** The `E2E` carrier, its offline tests, the generator parity checks and the release-asset validation are in
-place at the current revision; no clean-runtime execution of the committed notebook blob has been recorded yet. The
-registry stays at **Candidate** until a clean Kaggle Tesla T4 (or Colab) run of the exact committed blob is recorded
-above. The DIMER upload of the weights is on HOLD by the maintainer's decision (2026-09-20) independently of this gate.
+**Release-grade.** The `E2E` notebook blob `52226812` (committed at `d4fdf72`) executed top-to-bottom in a clean Kaggle Tesla
+T4 runtime on 2026-09-20 (11/11 ok, 2911.9 s, 130 files / 34,341 MB fetched and digest-verified inside the notebook, the
+23-file snapshot from the mirror) with no repository checkout — the REL1/REL10 supported-runtime evidence this file gates on.
+The v1 run and the feasibility probe above are history. Any later change to the carried modules or to the notebook produces
+a new blob, and the registry returns to **Candidate** until a clean run of that blob is recorded here. The DIMER upload of
+the weights is on HOLD by the maintainer's decision (2026-09-20) independently of this gate.
