@@ -75,6 +75,8 @@ def test_identity_is_immutable_and_committed_manifests_agree():
         assert manifest["totalBytes"] == sum(e["bytes"] for e in manifest["files"])
         assert all(len(e["sha256"]) == 64 for e in manifest["files"])
         assert not any(e["path"].endswith((".bin", ".pt", ".pth", ".ckpt", ".pickle", ".py")) for e in manifest["files"])
+        # every committed entry must pass the code-free file-type rule verify_snapshot applies (Kaggle run 1 failed on README.md)
+        assert all(e["path"].endswith(pl.SNAPSHOT_FILE_SUFFIXES) for e in manifest["files"]), key
     snapshot = json.loads((ROOT / "weights" / pl.MODEL_KEY / pl.MANIFEST_NAME).read_text(encoding="utf-8"))
     assert snapshot["staging"]["repo"] == STAGING_ID and snapshot["staging"]["revision"] == STAGING_REVISION
     assert snapshot["license"] == pl.MODEL_LICENSE == "apache-2.0"

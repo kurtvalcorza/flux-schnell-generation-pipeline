@@ -94,7 +94,7 @@ LORA_TARGETS: tuple[str, ...] = ("to_q", "to_k", "to_v", "to_out.0")
 LORA_MODULES = 3 * (NUM_DOUBLE_BLOCKS + NUM_SINGLE_BLOCKS) + NUM_DOUBLE_BLOCKS  # single blocks have no to_out.0
 LORA_TENSORS = 2 * LORA_MODULES  # 380: (A, B) per module
 LORA_PARAMETERS = LORA_MODULES * 2 * LORA_RANK * HIDDEN_SIZE  # 9,338,880
-SNAPSHOT_FILE_SUFFIXES = (".safetensors", ".json", ".model", ".txt")
+SNAPSHOT_FILE_SUFFIXES = (".safetensors", ".json", ".model", ".txt", ".md")  # the scorer snapshot carries its README
 
 
 # --------------------------------------------------------------------------------------------------
