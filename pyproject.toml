@@ -1,0 +1,51 @@
+[project]
+name = "flux-schnell-generation-pipeline"
+version = "0.1.0"
+description = "DIMER pipeline for PixArt-Σ XL-2 512-MS (PixArt-alpha/PixArt-Sigma-XL-2-512-MS): text-to-image generation, held-out denoising-loss evaluation, CLIP-scored generations, and bounded LoRA fine-tuning of the diffusion transformer with a portable adapter"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { file = "LICENSE" }
+authors = [{ name = "Kurt Valcorza" }]
+dependencies = [
+  # The transformer, VAE and scheduler come from diffusers, the T5-XXL encoder / tokenizer and the CLIP scorer from
+  # transformers (sentencepiece + protobuf convert the T5 SentencePiece model), LoRA from peft; torchvision is
+  # pinned beside torch because the import chain reaches it.
+  "torch==2.14.0",
+  "torchvision==0.29.0",
+  # torchaudio is pinned beside torch because `transformers` imports it when it is present and a hosted image's
+  # torchaudio built for another CUDA version refuses to load (Kaggle: torch cu130 vs preinstalled torchaudio cu128)
+  "torchaudio==2.11.0",
+  "diffusers==0.40.0",
+  "transformers==5.17.0",
+  "peft==0.21.0",
+  # torchao is never called; peft's LoRA dispatcher raises ImportError when a hosted image preinstalls a torchao older
+  # than 0.16 (Kaggle ships 0.10.0), so a supported version is pinned to make the injection deterministic there
+  "torchao==0.18.0",
+  "accelerate==1.15.0",
+  "tokenizers==0.23.2",
+  "sentencepiece==0.2.2",
+  "protobuf==7.36.2",
+  "safetensors==0.8.0",
+  "huggingface-hub==1.32.0",
+  "numpy==2.5.3",
+  "pillow==11.3.0",
+]
+[project.optional-dependencies]
+dev = ["pytest==8.4.2", "ruff==0.16.6"]
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+[tool.hatch.build.targets.wheel]
+packages = ["src/flux_schnell_generation_pipeline"]
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 130
+target-version = "py312"
+src = ["src", "tests"]
+extend-exclude = ["tutorials"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
