@@ -689,7 +689,7 @@ def fetch_corpus(*, cache_dir: str | Path | None = None, fetcher: Any = None) ->
             if fetcher is not None:
                 data = fetcher(url)
             else:
-                request = urllib.request.Request(url, headers={"User-Agent": "dimer-pixart-sigma-tutorial/1.0"})
+                request = urllib.request.Request(url, headers={"User-Agent": "dimer-flux-schnell-tutorial/1.0"})
                 with urllib.request.urlopen(request, timeout=120) as response:  # noqa: S310 (pinned https URL)
                     data = response.read()
             if len(data) != size or _sha256_bytes(data) != digest:

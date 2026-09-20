@@ -1,15 +1,15 @@
 [project]
 name = "flux-schnell-generation-pipeline"
 version = "0.1.0"
-description = "DIMER pipeline for PixArt-Σ XL-2 512-MS (PixArt-alpha/PixArt-Sigma-XL-2-512-MS): text-to-image generation, held-out denoising-loss evaluation, CLIP-scored generations, and bounded LoRA fine-tuning of the diffusion transformer with a portable adapter"
+description = "DIMER pipeline for FLUX.1 [schnell] (black-forest-labs/FLUX.1-schnell, staged from an ungated mirror): few-step text-to-image generation on a 4-bit transformer, held-out flow-matching-loss evaluation, CLIP-scored generations, and bounded QLoRA fine-tuning with a portable adapter"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 license = { file = "LICENSE" }
 authors = [{ name = "Kurt Valcorza" }]
 dependencies = [
-  # The transformer, VAE and scheduler come from diffusers, the T5-XXL encoder / tokenizer and the CLIP scorer from
-  # transformers (sentencepiece + protobuf convert the T5 SentencePiece model), LoRA from peft; torchvision is
-  # pinned beside torch because the import chain reaches it.
+  # The transformer, VAE and scheduler come from diffusers, the CLIP-L / T5-XXL encoders, tokenizers and the CLIP scorer
+  # from transformers (sentencepiece + protobuf convert the T5 SentencePiece model), LoRA from peft, the 4-bit NF4 load of
+  # the 12 B transformer from bitsandbytes; torchvision is pinned beside torch because the import chain reaches it.
   "torch==2.14.0",
   "torchvision==0.29.0",
   # torchaudio is pinned beside torch because `transformers` imports it when it is present and a hosted image's
@@ -18,6 +18,7 @@ dependencies = [
   "diffusers==0.40.0",
   "transformers==5.17.0",
   "peft==0.21.0",
+  "bitsandbytes==0.50.2",
   # torchao is never called; peft's LoRA dispatcher raises ImportError when a hosted image preinstalls a torchao older
   # than 0.16 (Kaggle ships 0.10.0), so a supported version is pinned to make the injection deterministic there
   "torchao==0.18.0",

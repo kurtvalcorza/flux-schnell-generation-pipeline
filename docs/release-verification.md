@@ -1,6 +1,6 @@
 # Release verification
 
-`tutorials/pixart_sigma_generation_colab.ipynb` (`E2E`, **standalone** carrier) is a **release candidate** until the
+`tutorials/flux_schnell_generation_colab.ipynb` (`E2E`, **standalone** carrier) is a **release candidate** until the
 exact notebook revision has executed top-to-bottom in a clean supported runtime. Unit tests, JSON validation, code-cell
 compilation, the generator parity checks and `tools/validate_release_assets.py` are necessary checks but are **not**
 runtime evidence under DIMER Notebook Specification 2.0 (REL8). This file is the durable release-gate record.
@@ -16,30 +16,34 @@ CI runs `tools/validate_release_assets.py`, which checks:
   `standalone: true` and `generated_from` (repository, revision, module SHA-256, generator);
 - the standalone carrier (ST1–ST8, PAR1–PAR4): no clone, repository install or repository import on the primary
   path; one cell per carried module (`pipeline.py`, `samples.py`, `metrics.py`), each equal to its source after the
-  generator's documented rewrites; the inline `MANIFEST`, `BASE_MANIFEST` and `SCORER_MANIFEST` equal to the three
-  committed snapshot manifests and the inline `PINS` equal to the `pyproject.toml` runtime pins; the notebook
-  byte-identical (on LF) to `tools/build_notebook.py` output for its recorded revision; the pinned-install cell with
-  its restart-on-stale-import guard; `NOTEBOOK_SOURCE` recorded in exports;
+  generator's documented rewrites; the inline `MANIFEST` and `SCORER_MANIFEST` equal to the two committed snapshot
+  manifests and the inline `PINS` equal to the `pyproject.toml` runtime pins; the notebook byte-identical (on LF) to
+  `tools/build_notebook.py` output for its recorded revision; the pinned-install cell with its restart-on-stale-import
+  guard; `NOTEBOOK_SOURCE` recorded in exports;
 - `MODEL_ID`/`MODEL_REVISION` bound only in the carried module cell (and repeated in the inline manifest, which the
   notebook asserts against the module before staging), the revision a 40-hex immutable commit, and the same
-  identity string in `README.md`, `MODEL_CARD.md` and `docs/WEIGHTS.md` with no stray revisions (the components
-  revision `2c17b4e8…` and the scorer revision `1a25a446…` are the only other 40-hex commits the documents may name);
-- the profile-specific public-API calls (`stage_missing_files` / `stage_missing_base_files` /
-  `stage_missing_scorer_files` with `allow_download=True`, the three `verify_*_snapshot` calls,
-  `PixArtSigmaPipeline.from_pretrained(weights_dir=..., base_dir=..., use_lora=True)`, `fetch_sample_dataset` from
-  the pinned cache path, `load_byod_dataset`, `dataset_manifest`, `write_dataset_csv`, `validate_dataset` with the
-  refusal probes, `pipe.encode_prompts` and `pipe.release_text_encoder`, `pipe.evaluate` and `pipe.generate` +
-  `score_generations` + `real_photo_baseline` on the frozen model, `pipe.adapt` with its explicit hyperparameters,
-  `pipe.evaluate` after adaptation with the guaranteed assertions (kept-epoch validation loss ≤ frozen; re-scored validation loss matches the history), the new-prompt generation, `pipe.save_artifact`,
-  `PixArtSigmaPipeline.from_artifact` + `import_prompt_cache` and the reload-parity assertion, and the provenance
-  fields `safetensors_only: True`, `remote_code_executed: False` and the data base URL), the six expected `outputs/`
-  paths, the learner-facing statements (three pinned snapshots, the encoder does not fit beside a training graph,
-  generation has no ground truth, denoising loss, real-photo ceiling, not a human judgement, Open RAIL++-M,
-  sample-sanity, CC0) and the gated-off BYOD default; forbidden patterns (credential-in-URL, any `git clone` /
-  `github.com` / repository import on the primary path, a mutable `revision='main'`, direct `huggingface_hub` /
-  `safetensors` / `urllib` / `diffusers` / `transformers` / `peft` / `T5EncoderModel` / `CLIPModel` use,
-  `torch.load(` / `pickle.load` / `Unpickler`, `torch.no_grad(` / `torch.inference_mode(` / `.backward(` /
-  `pipe.transformer(` **outside the carried module cells**, `trust_remote_code=True`, `add_adapter(`);
+  identity string in `README.md`, `MODEL_CARD.md` and `docs/WEIGHTS.md` with no stray revisions (the staging mirror's
+  revision `9df3faa7…` and the scorer revision `1a25a446…` are the only other 40-hex commits the documents may name);
+- the profile-specific public-API calls (`stage_missing_files` / `stage_missing_scorer_files` with
+  `allow_download=True`, `verify_snapshot` and `verify_scorer_snapshot`,
+  `FluxSchnellPipeline.from_pretrained(weights_dir=WEIGHTS_DIR, use_lora=True)`, `fetch_sample_dataset` from the
+  pinned cache path, `load_byod_dataset`, `dataset_manifest`, `write_dataset_csv`, `validate_dataset` with the
+  refusal probes, `pipe.encode_prompts`, `pipe.export_prompt_cache` and `pipe.release_text_encoder`,
+  `pipe.load_transformer` with the parameter count printed, `pipe.evaluate` and `pipe.generate` + `score_generations`
+  + `real_photo_baseline` on the frozen model, `pipe.adapt` with its explicit hyperparameters, `pipe.evaluate` after
+  adaptation with the guaranteed assertions (kept-epoch validation loss ≤ frozen; re-scored validation loss matches the
+  history), the new-prompt generation, `pipe.save_artifact`, `pipe.release_transformer`,
+  `FluxSchnellPipeline.from_artifact(..., prompt_cache=cache)` and the reload-parity assertion, and the provenance
+  fields `staging`, `safetensors_only: True`, `remote_code_executed: False` and the data base URL), the six expected
+  `outputs/` paths, the learner-facing statements (ungated mirror, the transformer does not fit in 16-bit, the encoders
+  do not fit beside it, generation has no ground truth, flow-matching loss, real-photo ceiling, not a human judgement,
+  Apache-2.0, sample-sanity, CC0, every number is the 4-bit model's) and the gated-off BYOD default; forbidden patterns
+  (credential-in-URL, any `git clone` / `github.com` / repository import on the primary path, a mutable
+  `revision='main'`, direct `huggingface_hub` / `safetensors` / `urllib` / `diffusers` / `transformers` / `peft` /
+  `bitsandbytes` / `BitsAndBytesConfig` / `FluxTransformer2DModel` / `T5EncoderModel` / `CLIPTextModel` / `CLIPModel`
+  use, `torch.load(` / `pickle.load` / `Unpickler`, `torch.no_grad(` / `torch.inference_mode(` / `.backward(` /
+  `pipe.transformer(` **outside the carried module cells**, `trust_remote_code=True`, `add_adapter(` /
+  `inject_adapter_in_model(`);
 - `STATUS.md`, `README.md` and `tutorials/README.md` agree on one release-status token and no document makes an
   unsupported release-grade, production-readiness or benchmark claim;
 - `MODEL_CARD.md` front matter (`model_card_spec: "1.1"`), single H1, the 19 required headings in order, and the
@@ -48,16 +52,18 @@ CI runs `tools/validate_release_assets.py`, which checks:
 CI also runs `ruff check src tests tools`, `tools/build_notebook.py --check`, and the offline unit suite
 (`tests/test_pipeline.py`, `tests/test_samples.py`, `tests/test_adaptation.py` (stub transformer, skipped without
 torch), `tests/test_role_helpers.py`, `tests/test_import_boundary.py`, `tests/test_notebook_parity.py`; temporary
-manifests, synthetic images, an injected fetcher, no weights and none of `diffusers`, `transformers` or `peft`).
-These are source/provenance and unit checks. They are **not** execution evidence.
+manifests, synthetic images, an injected fetcher, no weights and none of `diffusers`, `transformers`, `peft` or
+`bitsandbytes`). These are source/provenance and unit checks. They are **not** execution evidence.
 
 ## Executor paths
 
 | Path | Runtime | Role |
 |---|---|---|
-| Google Colab (supported user path) | Colab GPU runtime (T4 or better, ≥ 15 GB) | The runtime the tutorial is written for; a clean top-to-bottom run here is promotion evidence |
+| Google Colab (supported user path) | Colab GPU runtime (T4 or better, ≥ 15 GB, CUDA with `bitsandbytes` support) | The runtime the tutorial is written for; a clean top-to-bottom run here is promotion evidence |
 | Kaggle CLI kernel or equivalent fresh container | Fresh GPU container, Python 3.12 image; the committed notebook executed verbatim in a fresh interpreter with a `google.colab` shim and **no repository checkout** (the notebook is standalone) | Reproducible clean-room executor of the same class; promotion evidence |
-| Local harness (pre-flight only) | WSL workstation GPU (12 GB), sequential cell executor with a `google.colab` shim, pre-staged pins and snapshots | Builder pre-flight to catch defects before spending cloud runs; **not** a supported runtime and **not** promotion evidence |
+
+No local pre-flight path exists for this row: the workstation runs no GPU jobs by decision (2026-09-20), and the
+transformer cannot be exercised without a CUDA GPU. Every executed run is a hosted clean-runtime run.
 
 ## Supported release verification procedure
 
@@ -66,53 +72,61 @@ Before changing the registry status from `Candidate` to `Release-grade`:
 1. resolve the exact PR/commit head under review and confirm static CI is green;
 2. open that exact notebook revision in a new GPU runtime (Colab, or a fresh-container executor above) with
    **no repository checkout**, an empty Hugging Face cache, and no pre-staged files under the working-directory
-   snapshots `weights/pixart-sigma-xl-2-512-ms/`, `weights/pixart-sigma-t5-vae/`, `weights/clip-vit-b-32-laion2b/`
-   or the data cache `weights/inat-birds/` (the standalone path writes the three manifests itself, stages all 24
-   listed files from the Hub — about 22.4 GB — and fetches the 60 pinned photographs, so none of the directories may
-   be seeded); the runtime needs about 25 GB of free disk and a GPU of at least 15 GB;
+   snapshots `weights/flux1-schnell/`, `weights/clip-vit-b-32-laion2b/` or the data cache `weights/inat-birds/` (the
+   standalone path writes the two manifests itself, stages all 32 listed files — 23 from the mirror
+   `unsloth/FLUX.1-schnell` at its pinned revision, 9 from the scorer repository — about 34.3 GB — and fetches the 60
+   pinned photographs, so none of the directories may be seeded); the runtime needs about 36 GB of free disk and a
+   CUDA GPU of at least 15 GB;
 3. run the notebook top-to-bottom without editing implementation cells (form parameters at their defaults:
-   `USE_BYOD = False`, `STEPS = 20`, `GUIDANCE_SCALE = 4.5`, `IMAGES_PER_PROMPT = 2`, `EPOCHS = 4`,
-   `LEARNING_RATE = 1e-4`, `BATCH_SIZE = 1`);
+   `USE_BYOD = False`, `STEPS = 4`, `IMAGES_PER_PROMPT = 1`, `EPOCHS = 3`, `LEARNING_RATE = 1e-4`, `BATCH_SIZE = 1`);
 4. verify that Section 1 reports `NOTEBOOK_SOURCE.repository_revision` equal to the revision recorded in
    `metadata.dimer.generated_from` and that the installed core package versions equal the inline `PINS`
-   (= `pyproject.toml`): `torch==2.14.0`, `torchvision==0.29.0`, `torchaudio==2.11.0`, `diffusers==0.40.0`, `transformers==5.17.0`,
-   `peft==0.21.0`, `torchao==0.18.0`, `accelerate==1.15.0`, `tokenizers==0.23.2`, `sentencepiece==0.2.2`, `protobuf==7.36.2`,
-   `safetensors==0.8.0`, `huggingface-hub==1.32.0`, `numpy==2.5.3`, `pillow==11.3.0` (an interpreter restart after
-   the install is expected where the runtime's preinstalled torch or numpy differ from the pins);
+   (= `pyproject.toml`): `torch==2.14.0`, `torchvision==0.29.0`, `torchaudio==2.11.0`, `diffusers==0.40.0`,
+   `transformers==5.17.0`, `peft==0.21.0`, `bitsandbytes==0.50.2`, `torchao==0.18.0`, `accelerate==1.15.0`,
+   `tokenizers==0.23.2`, `sentencepiece==0.2.2`, `protobuf==7.36.2`, `safetensors==0.8.0`, `huggingface-hub==1.32.0`,
+   `numpy==2.5.3`, `pillow==11.3.0` (an interpreter restart after the install is expected where the runtime's
+   preinstalled torch or numpy differ from the pins);
 5. verify every default-path stage completes:
    - pinned runtime installed from the inline `PINS` with no GitHub access;
-   - the three carried module cells execute (defining `PixArtSigmaPipeline`, `build_transformer`,
-     `lora_parameter_names`, the three `verify_*_snapshot` and `stage_missing_*` functions, `validate_inputs`,
-     `validate_dataset`, `validate_prompts`, `preprocess_image`, `fetch_corpus`, `fetch_sample_dataset`,
-     `build_sample_dataset`, `split_dataset`, `load_byod_dataset`, `write_dataset_csv`, `dataset_manifest`,
-     `sample_prompts`, `ClipScorer`, `score_generations`, `real_photo_baseline`) with no import of the repository
-     package;
-   - the inline manifests asserted against the module's constants, then the three staging calls reporting 3 + 12 + 9
-     entries fetched at the immutable revisions and the three verifications reporting 3 / 12 / 9 verified files;
-   - the model cell loading the transformer in float16 with the untrained LoRA attached (603 base tensors,
-     610,856,096 parameters; 448 LoRA tensors, 4,128,768 parameters), the VAE in float32, the tokenizer and the
-     scheduler config, with `source` "local-snapshot (three manifests verified; safetensors only)";
-   - the dataset manifest with 36 / 12 / 12 records, six distinct captions, `outputs/pixart_sigma_generation_sample_captions.csv`
+   - the three carried module cells execute (defining `FluxSchnellPipeline`, `build_transformer`,
+     `count_parameters`, `lora_parameter_names`, `pack_latents` / `unpack_latents` / `latent_image_ids`, the two
+     `verify_*_snapshot` and `stage_missing_*` functions, `validate_inputs`, `validate_dataset`, `validate_prompts`,
+     `preprocess_image`, `fetch_corpus`, `fetch_sample_dataset`, `build_sample_dataset`, `split_dataset`,
+     `load_byod_dataset`, `write_dataset_csv`, `dataset_manifest`, `sample_prompts`, `ClipScorer`,
+     `score_generations`, `real_photo_baseline`) with no import of the repository package;
+   - the inline manifests asserted against the module's constants, then the two staging calls reporting 23 + 9
+     entries fetched (the 23 from the mirror at `9df3faa7…`) and the two verifications reporting 23 / 9 verified files;
+   - the model cell loading the VAE in float32, both tokenizers and the scheduler config with `source`
+     "local-snapshot (manifest verified; safetensors only; staged from unsloth/FLUX.1-schnell)" and `device` `cuda`
+     — the transformer is **not** loaded here;
+   - the dataset manifest with 36 / 12 / 12 records, six distinct captions, `outputs/flux_schnell_generation_sample_captions.csv`
      written, and three refusals (missing caption, 200 px image, duplicate id);
-   - `pipe.encode_prompts` reporting the encoder loaded in float16 on `cuda`, 8 prompts encoded (six captions, the
-     new prompt, the empty negative prompt), 0 truncations, and `release_text_encoder` returning `True`;
-   - the frozen model's held-out denoising MSE on the validation and test records, twelve 512² generations scored by
-     CLIP with `outputs/pixart_sigma_generation_frozen_grid.jpg` written, and the real-photo ceiling on the test
-     photographs;
-   - `pipe.adapt` printing epoch 0 as the frozen model, 4,128,768 trainable of 614,984,864 parameters, 144 steps,
-     and a four-epoch history with the validation denoising MSE at the kept epoch below the frozen model's;
+   - `pipe.encode_prompts` reporting the encoders loaded in float16 on `cuda`, 7 prompts encoded (six captions and
+     the new prompt), 0 truncations, finite embeddings of shape (256, 4096) and pooled vectors of shape (768,), and
+     `release_text_encoder` returning `True` with the GPU memory back near zero;
+   - `pipe.load_transformer` reporting the 4-bit load (`quantization nf4`, 11,891,178,560 parameters as the checkpoint
+     counts them, 380 LoRA tensors) and the GPU memory after the load;
+   - the frozen model's held-out flow-matching MSE on the validation and test records, six 512² four-step generations
+     scored by CLIP with `outputs/flux_schnell_generation_frozen_grid.jpg` written, and the real-photo ceiling on the
+     test photographs;
+   - `pipe.adapt` printing epoch 0 as the frozen model, 9,338,880 trainable of 11,900,517,440 parameters, 108 steps,
+     and a three-epoch history with the validation flow-matching MSE at the kept epoch no higher than the frozen
+     model's;
    - `pipe.evaluate` on the validation and test records with the paired comparison, the assertions that the kept
      epoch's validation loss is no higher than the frozen model's and that the re-scored validation loss matches the
      history within 10⁻⁴ (the test change is printed as an observation), the adapted generations scored with
-     `outputs/pixart_sigma_generation_adapted_grid.jpg` written, and `outputs/pixart_sigma_generation_evaluation_report.json`;
-   - the new prompt rendered twice and CLIP-scored;
-   - `pipe.save_artifact` writing `outputs/pixart_sigma_generation_adapter/{adapter.safetensors,manifest.json}`
-     (448 tensors), and `PixArtSigmaPipeline.from_artifact` reloading it into a fresh pipeline that adopts the
-     exported prompt cache, with the held-out MSE and a seeded generation matching the adapted pipeline (the cell
-     asserts `denoising_mse_diff < 1e-6` and `mean_abs_pixel_diff < 1.0`);
-   - `outputs/pixart_sigma_generation_result.json` written with `NOTEBOOK_SOURCE`, the three identities and
-     licences, the provenance block (`safetensors_only: true`, `remote_code_executed: false`, the data base URL),
-     the runtime versions, the comparison and the reload parity;
+     `outputs/flux_schnell_generation_adapted_grid.jpg` written, and `outputs/flux_schnell_generation_evaluation_report.json`;
+   - the new prompt rendered twice and CLIP-scored, and one parity image of the first training prompt rendered by the
+     adapted pipeline;
+   - `pipe.save_artifact` writing `outputs/flux_schnell_generation_adapter/{adapter.safetensors,manifest.json}`
+     (380 tensors, `quantization nf4`), `pipe.release_transformer` returning `True`, and
+     `FluxSchnellPipeline.from_artifact` reloading the artifact into a fresh 4-bit pipeline that adopts the exported
+     prompt cache, with the held-out MSE and a seeded generation matching the adapted pipeline (the cell asserts
+     `flow_matching_mse_diff < 1e-5` and `mean_abs_pixel_diff < 1.0`);
+   - `outputs/flux_schnell_generation_result.json` written with `NOTEBOOK_SOURCE`, the identities and licences, the
+     provenance block (`staging`, `safetensors_only: true`, `remote_code_executed: false`, the encoders released before
+     training, the transformer loaded after encoding, the data base URL), the runtime versions, the comparison and the
+     reload parity;
 6. verify the exports exist and the interpretation section matches the observed path;
 7. record the notebook Git blob id, commit, runtime (platform, Python, PyTorch, device), the model identifier and
    immutable revision, whether the model cache, the weights directories and the data cache were clean, outcome,
@@ -126,21 +140,31 @@ A known-failing default path in the supported runtime blocks release (REL11).
 
 | Notebook | Commit / notebook blob | Date (UTC) | Executor | Outcome |
 |---|---|---|---|---|
-| `pixart_sigma_generation_colab.ipynb` (`E2E`) | `4862a6e` / `99829b51` | 2026-09-19 | Kaggle Tesla T4 (`kurtvalcorza/dimer-nb2-pixart-sigma-generation` v3; image `torch 2.10.0+cu128` before the pinned install, `torch 2.14.0+cu130`, `diffusers 0.40.0`, `transformers 5.17.0`, `peft 0.21.0` after, Python 3.12.13, `cuda`) | **PASSED** — 11/11 code cells ok (1 restart after install cell); 117 files, 22443 MB fetched into a clean runtime (the three Hub snapshots + the pinned photographs); comparison held-out denoising MSE (test) frozen 0.105983 → adapted 0.105838 (best epoch 3, validation 0.109093 → 0.108941; the guaranteed validation inequality asserted, the test change printed as an observation), CLIP prompt similarity / label accuracy / reference similarity of 12 generations frozen 26.79 / 0.50 / 65.57 → adapted 28.01 / 0.50 / 68.95 against the real-photo ceiling 30.25 / 0.917 / 88.66 (sample-sanity, not a quality claim); reload parity denoising_mse_diff: 0.0, mean_abs_pixel_diff: 0.0; run summary and executed notebook archived under `.agent/backups/kaggle-e2e-2026-09-19/out/dimer-nb2-pixart-sigma-generation/v3/evidence/` in the workspace |
-| `pixart_sigma_generation_colab.ipynb` | generated, pre-commit | 2026-09-19 | Local pre-flight harness (WSL, CPython 3.12.3, CUDA RTX 5070 Ti laptop, `google.colab` shim, pins pre-installed) | PASS — pre-flight only, **not** promotion evidence |
+| `flux_schnell_generation_colab.ipynb` (`E2E`) | pending | — | Kaggle Tesla T4 (`kurtvalcorza/dimer-nb2-flux-schnell-generation`) | **Not yet executed** — the first clean run is queued behind the feasibility probe recorded below |
+
+## Feasibility probe (not a notebook execution)
+
+Before the notebook was run, a throwaway Kaggle kernel (`kurtvalcorza/dimer-probe-flux-schnell-qlora`, Tesla T4) staged
+the 23 pinned files from the mirror with SHA-256 verification, encoded one prompt with the float16 text encoders,
+released them, loaded the transformer 4-bit, generated one 512² image in 4 steps, attached a rank-8 LoRA and ran three
+flow-matching training steps with gradient checkpointing — once with float16 compute and once with bfloat16 (emulated on
+a T4) — printing staging time, load time, generation time, per-step time, peak memory and finiteness. Its outcome is
+recorded here when it completes; it is engineering evidence for the recipe, not release evidence for the notebook.
 
 ## Recorded executions
 
-Notebook identity is the Git blob id of `tutorials/pixart_sigma_generation_colab.ipynb` (verify with
-`git rev-parse <commit>:tutorials/pixart_sigma_generation_colab.ipynb`). Wall times are the sum of per-cell times
+Notebook identity is the Git blob id of `tutorials/flux_schnell_generation_colab.ipynb` (verify with
+`git rev-parse <commit>:tutorials/flux_schnell_generation_colab.ipynb`). Wall times are the sum of per-cell times
 reported by the executor and include the model download where it occurred; they are measurements for the stated
 runtime, not general estimates.
 
 | Date (UTC) | Commit / notebook blob | Executor | Path exercised | Wall | Outcome |
 |---|---|---|---|---|---|
-| 2026-09-19 | `4862a6e` / `99829b51` | Kaggle Tesla T4 (`kurtvalcorza/dimer-nb2-pixart-sigma-generation` v3; image `torch 2.10.0+cu128` before the pinned install, `torch 2.14.0+cu130`, `diffusers 0.40.0`, `transformers 5.17.0`, `peft 0.21.0` after, Python 3.12.13, `cuda`) | Default sample path, `Run all` from a fresh interpreter with an empty Hugging Face cache and no repository checkout (blob SHA-1 verified against GitHub before execution); the three snapshots staged and digest-verified by the notebook, the pinned photographs fetched by the notebook | 1582.8 s | **PASSED** — 11/11 code cells ok (1 restart after install cell); 117 files, 22443 MB fetched into a clean runtime (the three Hub snapshots + the pinned photographs); comparison held-out denoising MSE (test) frozen 0.105983 → adapted 0.105838 (best epoch 3, validation 0.109093 → 0.108941; the guaranteed validation inequality asserted, the test change printed as an observation), CLIP prompt similarity / label accuracy / reference similarity of 12 generations frozen 26.79 / 0.50 / 65.57 → adapted 28.01 / 0.50 / 68.95 against the real-photo ceiling 30.25 / 0.917 / 88.66 (sample-sanity, not a quality claim); reload parity denoising_mse_diff: 0.0, mean_abs_pixel_diff: 0.0; run summary and executed notebook archived under `.agent/backups/kaggle-e2e-2026-09-19/out/dimer-nb2-pixart-sigma-generation/v3/evidence/` in the workspace |
-| 2026-09-19 | generated, pre-commit | Local pre-flight harness (WSL, CPython 3.12.3, `torch 2.14.0+cu130`, RTX 5070 Ti laptop 12 GB, `diffusers 0.40.0`, `transformers 5.17.0`, `peft 0.21.0`) | Default sample path (stage → verify the three snapshots → load transformer + LoRA / VAE → pinned-photo fetch from the cache → validate → refusal probes → encode prompts + release encoder → frozen evaluation, generations and real-photo ceiling → LoRA adapt → paired evaluation → new prompt → export → reload); the three snapshots and the 60 photographs were pre-staged, so every staging call fetched 0 entries and the run verified 24 files by digest | 1994.8 s | **PASSED** — 11/11 code cells; probes refused; frozen test denoising MSE 0.105939 → adapted 0.105800 (best epoch 3; printed, not asserted); encoder peak on the 12 GB GPU; adapter 448 tensors; reload parity identical. Pre-flight; hosted clean-runtime run still required |
+| — | pending | Kaggle Tesla T4 | Default sample path, `Run all` from a fresh interpreter with an empty Hugging Face cache and no repository checkout | — | **Not yet executed** |
 
 ## Current status
 
-**Release-grade.** The `E2E` notebook blob `99829b51` (committed at `4862a6e`) executed top-to-bottom in a clean Kaggle Tesla T4 runtime on 2026-09-19 (11/11 ok (1 restart after install cell), 1582.8 s, 117 files, 22443 MB fetched and digest-verified inside the notebook, three snapshots) with no repository checkout — the REL1/REL10 supported-runtime evidence this file gates on. The local pre-flight rows above are what preceded it and remain history. Any later change to the carried modules or to the notebook produces a new blob, and the registry returns to **Candidate** until a clean run of that blob is recorded here.
+**Candidate.** The `E2E` carrier, its offline tests, the generator parity checks and the release-asset validation are in
+place at the current revision; no clean-runtime execution of the committed notebook blob has been recorded yet. The
+registry stays at **Candidate** until a clean Kaggle Tesla T4 (or Colab) run of the exact committed blob is recorded
+above. The DIMER upload of the weights is on HOLD by the maintainer's decision (2026-09-20) independently of this gate.
