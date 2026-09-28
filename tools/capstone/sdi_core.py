@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import io
 import json
 import os
 import re
@@ -307,6 +308,19 @@ def load_gray(path: str | Path) -> tuple[Image.Image, str]:
                 return Image.fromarray(np.clip(array, 0, 255).astype(np.uint8)), mode
             return image.convert("L"), mode
     raise ContractError(f"{path}: unsupported image mode {mode!r}")
+
+
+def load_verified_gray(path: str | Path, row: Mapping[str, Any]) -> Image.Image:
+    """Load a manifest-listed image only if its file bytes and decoded pixels still match the digests recorded in the
+    frozen split manifest. Every stage that consumes a listed image goes through here, so a changed or substituted
+    file is refused before it can be scored under its old label."""
+    data = Path(path).read_bytes()
+    if sha256_bytes(data) != row["file_sha256"]:
+        raise ContractError(f"{row['image_id']}: the file at {path} no longer matches the SHA-256 recorded in split_manifest.csv; restore the original file or start a new experiment from Section 2")
+    image, _ = load_gray(io.BytesIO(data))
+    if pixel_digest(np.asarray(image)) != row["pixel_sha256"]:
+        raise ContractError(f"{row['image_id']}: decoded pixels differ from split_manifest.csv; restore the original file or start a new experiment from Section 2")
+    return image
 
 
 def signature(image: Image.Image) -> np.ndarray:
@@ -921,6 +935,20 @@ FEATURE_DIM = 512
 PARITY_TOLERANCE = 1e-5
 
 
+STAGE_SOURCES = ("sdi_core.py", "stage_data.py", "stage_features.py", "stage_fit.py", "stage_phi4.py", "stage_prompts.py", "stage_flux.py", "stage_evaluate.py", "stage_export.py", "stage_reload.py")
+DECISION_RULE = "argmax over logits; softmax scores are uncalibrated"
+
+
+def source_files(script_dir: str | Path) -> dict[str, Path]:
+    """The stage code and shared core that define preprocessing, fitting, evaluation and export. Frozen with the
+    experiment so that changing any of them after the freeze is detected rather than silently mixed in."""
+    root = Path(script_dir)
+    missing = [n for n in STAGE_SOURCES if not (root / n).is_file()]
+    if missing:
+        raise ContractError(f"stage sources missing from {root}: {missing}")
+    return {f"source/{n}": root / n for n in STAGE_SOURCES}
+
+
 def freeze_record(path: str | Path, record: Mapping[str, Any], referenced: Mapping[str, str | Path], base: str | Path) -> dict[str, Any]:
     """Write the experiment record with the SHA-256 of every file it depends on and of itself. Nothing downstream
     may change after this point without `verify_frozen` failing."""
@@ -928,7 +956,7 @@ def freeze_record(path: str | Path, record: Mapping[str, Any], referenced: Mappi
     files = {}
     for name, p in sorted(referenced.items()):
         p = Path(p)
-        files[name] = {"path": str(p.relative_to(base)), "sha256": sha256_file(p), "bytes": p.stat().st_size}
+        files[name] = {"path": os.path.relpath(p, base), "sha256": sha256_file(p), "bytes": p.stat().st_size}
     body = dict(record)
     body["frozen_files"] = files
     body["record_sha256"] = sha256_bytes(canonical_json(body).encode())
@@ -987,6 +1015,11 @@ def load_artifact(artifact_dir: str | Path) -> tuple[np.ndarray, np.ndarray, dic
         p = root / name
         if p.stat().st_size != entry["bytes"] or sha256_file(p) != entry["sha256"]:
             raise ContractError(f"{name} does not match its manifest digest; the artifact was modified or truncated")
+    classes = manifest.get("classes")
+    if not isinstance(classes, list) or not classes or len(set(classes)) != len(classes):
+        raise ContractError(f"artifact classes {classes!r} must be a non-empty list of unique names")
+    if manifest.get("class_index") != {c: i for i, c in enumerate(classes)}:
+        raise ContractError(f"artifact class_index {manifest.get('class_index')} is inconsistent with its class list")
     tensors = load_file(str(root / ARTIFACT_WEIGHTS))
     if sorted(tensors) != ["bias", "weight"]:
         raise ContractError(f"{ARTIFACT_WEIGHTS} holds {sorted(tensors)}; expected ['bias', 'weight']")
@@ -997,6 +1030,60 @@ def load_artifact(artifact_dir: str | Path) -> tuple[np.ndarray, np.ndarray, dic
     if not (np.isfinite(weight).all() and np.isfinite(bias).all()):
         raise ContractError("head tensors contain non-finite values")
     return weight, bias, manifest
+
+
+def _normalised(obj: Any) -> str:
+    return canonical_json(json.loads(json.dumps(obj)))
+
+
+def check_artifact_semantics(manifest: Mapping[str, Any], *, record: Mapping[str, Any], preprocessing: Mapping[str, Any], backbone: Mapping[str, Any]) -> None:
+    """The artifact means what the frozen experiment evaluated: same class names in the same order with consistent
+    indices, the same decision rule, preprocessing and backbone, and the same selected head. Numeric parity alone
+    cannot show this, because a relabelled class list leaves every logit unchanged."""
+    classes = manifest.get("classes")
+    if not isinstance(classes, list) or not all(isinstance(c, str) for c in classes) or len(set(classes)) != len(classes):
+        raise ContractError(f"artifact classes {classes!r} must be a list of unique names")
+    if classes != list(record["class_order"]):
+        raise ContractError(f"artifact classes {classes} differ from the frozen experiment's class order {record['class_order']}")
+    if manifest.get("class_index") != {c: i for i, c in enumerate(classes)}:
+        raise ContractError(f"artifact class_index {manifest.get('class_index')} is inconsistent with its class list")
+    if manifest.get("decision_rule") != DECISION_RULE:
+        raise ContractError(f"artifact decision rule {manifest.get('decision_rule')!r} is not {DECISION_RULE!r}")
+    if _normalised(manifest.get("preprocessing")) != _normalised(preprocessing):
+        raise ContractError("artifact preprocessing differs from the preprocessing this notebook applies; reconstruction would not reproduce the evaluated classifier")
+    if _normalised(manifest.get("backbone")) != _normalised(backbone):
+        raise ContractError("artifact backbone identity differs from the pinned backbone")
+    if manifest.get("experiment_record_sha256") != record["record_sha256"]:
+        raise ContractError("artifact was exported from a different frozen experiment record")
+    selected = record["selection"]
+    got = manifest.get("selection") or {}
+    if (got.get("arm"), got.get("seed"), got.get("epoch")) != (selected["arm"], selected["seed"], selected["epoch"]):
+        raise ContractError(f"artifact selection {got} differs from the frozen selection {selected}")
+    frozen_head = record["frozen_files"].get(f"heads/{selected['arm']}_s{selected['seed']}", {})
+    if manifest["files"][ARTIFACT_WEIGHTS]["sha256"] != frozen_head.get("sha256"):
+        raise ContractError("artifact head tensors differ from the frozen head of the selected arm and seed")
+
+
+def replay_check(logits: np.ndarray, expected_logits: np.ndarray, expected_labels: Sequence[str], classes: Sequence[str]) -> dict[str, Any]:
+    """Parity passes only if every logit is within tolerance AND every replayed decision names the same class."""
+    diff = float(np.abs(np.asarray(logits) - np.asarray(expected_logits)).max()) if len(expected_labels) else 0.0
+    labels = [classes[int(i)] for i in np.asarray(logits).argmax(1)] if len(expected_labels) else []
+    same = labels == list(expected_labels)
+    return {"examples": len(expected_labels), "max_abs_logit_difference": diff, "tolerance": PARITY_TOLERANCE, "same_predictions": same, "replayed_labels": labels, "expected_labels": list(expected_labels), "passed": diff <= PARITY_TOLERANCE and same and len(expected_labels) > 0}
+
+
+NEW_IMAGE_FIELDS = ("image_id", "source", "known_label", "input_mode", "input_size", "predicted_label")
+
+
+def write_new_predictions(path: str | Path, rows: Sequence[Mapping[str, Any]], classes: Sequence[str]) -> Path:
+    """Fixed header (identifiers, then one uncalibrated score per class in artifact order), so an empty cohort still
+    yields a valid, header-only CSV."""
+    path = Path(path)
+    with open(path, "w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=[*NEW_IMAGE_FIELDS, *[f"score_{c}" for c in classes]], lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+    return path
 
 
 def head_logits(features: np.ndarray, weight: np.ndarray, bias: np.ndarray) -> np.ndarray:

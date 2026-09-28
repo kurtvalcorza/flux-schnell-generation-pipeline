@@ -338,7 +338,7 @@ def test_generation_shortfall_blocks_the_comparison():
 def test_nonfinite_image_modes_are_refused(tmp_path):
     array = np.full((80, 80), np.nan, dtype=np.float32)
     path = tmp_path / "f.tif"
-    Image.fromarray(array, mode="F").save(path)
+    Image.fromarray(array).save(path)
     with pytest.raises(core.ContractError, match="non-finite"):
         core.load_gray(path)
 
@@ -420,7 +420,8 @@ def _artifact(tmp_path):
     pytest.importorskip("safetensors")
     rng = np.random.default_rng(0)
     weight, bias = rng.normal(size=(3, core.FEATURE_DIM)).astype(np.float32), rng.normal(size=3).astype(np.float32)
-    core.write_artifact(tmp_path / "clf", weight, bias, {"classes": ["normal", "scratches", "spots"]})
+    classes = ["normal", "scratches", "spots"]
+    core.write_artifact(tmp_path / "clf", weight, bias, {"classes": classes, "class_index": {c: i for i, c in enumerate(classes)}})
     return weight, bias
 
 
@@ -446,6 +447,7 @@ def test_artifact_reload_failures(tmp_path):
     (tmp_path / "clf" / "extra.pkl").unlink()
     manifest = json.loads((tmp_path / "clf" / core.ARTIFACT_MANIFEST).read_text())
     manifest["classes"] = ["a", "b"]
+    manifest["class_index"] = {"a": 0, "b": 1}
     (tmp_path / "clf" / core.ARTIFACT_MANIFEST).write_text(json.dumps(manifest))
     with pytest.raises(core.ContractError, match="shapes"):
         core.load_artifact(tmp_path / "clf")
@@ -603,3 +605,166 @@ def test_gpu_model_loads_stream_to_the_device():
                 keywords = {k.arg: k.value for k in node.keywords}
                 assert "device_map" in keywords, f"{name}:{node.lineno} {owner}.from_pretrained without device_map"
                 assert isinstance(keywords["device_map"], ast.Constant) and keywords["device_map"].value == "cuda", f"{name}:{node.lineno}"
+
+
+# ------------------------------------------------------------------------------------------------ review BSA-01..06
+
+
+def test_verified_loading_refuses_changed_test_pixels(tmp_path):
+    """BSA-01: a held-out image replaced after the manifest was written is refused before it can be scored."""
+    path = _jpeg(tmp_path / "img.png", seed=1)
+    info = core.inspect_image(path)
+    row = {"image_id": "t1", "file_sha256": info["file_sha256"], "pixel_sha256": info["pixel_sha256"]}
+    assert core.pixel_digest(np.asarray(core.load_verified_gray(path, row))) == info["pixel_sha256"]
+    _jpeg(path, seed=2)  # another valid image under the same name
+    with pytest.raises(core.ContractError, match="no longer matches the SHA-256"):
+        core.load_verified_gray(path, row)
+    with pytest.raises(core.ContractError, match="decoded pixels differ"):
+        core.load_verified_gray(path, {**row, "file_sha256": core.sha256_file(path)})
+
+
+def test_freeze_binds_stage_sources_and_signatures(tmp_path):
+    """BSA-01: changing the stage code or the overlap signatures after freezing fails verification."""
+    code = tmp_path / "work"
+    code.mkdir()
+    for name in core.STAGE_SOURCES:
+        (code / name).write_text(f"# {name}\n")
+    sig = tmp_path / "work" / "signatures.npz"
+    np.savez(sig, signature=np.zeros((2, 4), np.float16))
+    referenced = {**core.source_files(code), "audit/signatures": sig}
+    record = tmp_path / "experiment_config.json"
+    core.freeze_record(record, {"k": 1}, referenced, tmp_path)
+    core.verify_frozen(record, tmp_path)
+    (code / "stage_features.py").write_text("# preprocessing changed\n")
+    with pytest.raises(core.ContractError, match="source/stage_features.py"):
+        core.verify_frozen(record, tmp_path)
+    (code / "stage_features.py").write_text("# stage_features.py\n")
+    np.savez(sig, signature=np.ones((2, 4), np.float16))
+    with pytest.raises(core.ContractError, match="audit/signatures"):
+        core.verify_frozen(record, tmp_path)
+    (code / "stage_fit.py").unlink()
+    with pytest.raises(core.ContractError, match="stage sources missing"):
+        core.source_files(code)
+
+
+def test_stages_consume_manifest_images_only_through_verification():
+    for name in ("stage_features.py", "stage_evaluate.py", "stage_export.py", "stage_reload.py"):
+        text = (CAPSTONE / name).read_text(encoding="utf-8")
+        assert "load_gray(data_root" not in text, name
+        assert "load_verified_gray(" in text, name
+    fit = (CAPSTONE / "stage_fit.py").read_text(encoding="utf-8")
+    assert 'referenced["audit/signatures"]' in fit and "core.source_files(" in fit
+    assert set(core.STAGE_SOURCES) == {"sdi_core.py", *(p.name for p in CAPSTONE.glob("stage_*.py"))}
+
+
+def _semantic_fixture(tmp_path):
+    pytest.importorskip("safetensors")
+    rng = np.random.default_rng(0)
+    classes = ["normal", "scratches", "spots"]
+    weight, bias = rng.normal(size=(3, core.FEATURE_DIM)).astype(np.float32), rng.normal(size=3).astype(np.float32)
+    preprocessing, backbone = core.PREPROCESSING, {"id": "b", "sha256": "0" * 64}
+    manifest = core.write_artifact(tmp_path / "clf", weight, bias, {"classes": classes, "class_index": {c: i for i, c in enumerate(classes)}, "decision_rule": core.DECISION_RULE, "preprocessing": preprocessing, "backbone": backbone, "experiment_record_sha256": "r" * 64, "selection": {"arm": "B", "seed": 17, "epoch": 5}})
+    record = {"class_order": classes, "record_sha256": "r" * 64, "selection": {"arm": "B", "seed": 17, "epoch": 5}, "frozen_files": {"heads/B_s17": {"sha256": manifest["files"][core.ARTIFACT_WEIGHTS]["sha256"]}}}
+    return manifest, record, preprocessing, backbone
+
+
+def test_artifact_semantics_bind_the_frozen_experiment(tmp_path):
+    """BSA-02: metadata changes that leave every logit unchanged are refused."""
+    manifest, record, pre, bb = _semantic_fixture(tmp_path)
+    core.check_artifact_semantics(manifest, record=record, preprocessing=pre, backbone=bb)
+    reversed_classes = manifest["classes"][::-1]
+    cases = {
+        "differ from the frozen experiment's class order": {"classes": reversed_classes, "class_index": {c: i for i, c in enumerate(reversed_classes)}},
+        "inconsistent": {"class_index": {"normal": 0, "scratches": 2, "spots": 1}},
+        "unique names": {"classes": ["normal", "normal", "spots"]},
+        "preprocessing differs": {"preprocessing": {**pre, "normalisation": {"mean": [0, 0, 0], "std": [1, 1, 1], "scale": "x"}}},
+        "backbone identity": {"backbone": {**bb, "sha256": "1" * 64}},
+        "different frozen experiment": {"experiment_record_sha256": "x" * 64},
+        "selection": {"selection": {"arm": "C", "seed": 17, "epoch": 5}},
+        "decision rule": {"decision_rule": "threshold 0.5"},
+    }
+    for message, change in cases.items():
+        with pytest.raises(core.ContractError, match=message):
+            core.check_artifact_semantics({**manifest, **change}, record=record, preprocessing=pre, backbone=bb)
+    other_head = {**record, "frozen_files": {"heads/B_s17": {"sha256": "f" * 64}}}
+    with pytest.raises(core.ContractError, match="head tensors differ"):
+        core.check_artifact_semantics(manifest, record=other_head, preprocessing=pre, backbone=bb)
+
+
+def test_load_artifact_refuses_inconsistent_class_metadata(tmp_path):
+    _semantic_fixture(tmp_path)
+    path = tmp_path / "clf" / core.ARTIFACT_MANIFEST
+    manifest = json.loads(path.read_text())
+    for change, message in (({"class_index": {"normal": 1, "scratches": 0, "spots": 2}}, "inconsistent"), ({"classes": ["a", "a", "b"]}, "unique")):
+        path.write_text(json.dumps({**manifest, **change}))
+        with pytest.raises(core.ContractError, match=message):
+            core.load_artifact(tmp_path / "clf")
+
+
+def test_replay_requires_identical_decisions():
+    """BSA-02: identical numbers under a relabelled class list, or a near-tie flipped within tolerance, fail."""
+    logits = np.array([[2.0, 1.0, 0.0], [0.0, 3.0, 1.0]], np.float32)
+    ok = core.replay_check(logits, logits, ["normal", "scratches"], ["normal", "scratches", "spots"])
+    assert ok["passed"] and ok["same_predictions"]
+    relabelled = core.replay_check(logits, logits, ["normal", "scratches"], ["spots", "scratches", "normal"])
+    assert relabelled["max_abs_logit_difference"] == 0 and not relabelled["same_predictions"] and not relabelled["passed"]
+    tie = np.array([[1.0, 1.0 + 4e-6, 0.0]], np.float32)
+    flipped = core.replay_check(tie, np.array([[1.0 + 4e-6, 1.0, 0.0]], np.float32), ["normal"], ["normal", "scratches", "spots"])
+    assert flipped["max_abs_logit_difference"] <= core.PARITY_TOLERANCE and not flipped["passed"]
+    assert not core.replay_check(np.zeros((0, 3)), np.zeros((0, 3)), [], ["a", "b", "c"])["passed"]
+
+
+def test_empty_new_image_cohort_writes_header_only(tmp_path):
+    """BSA-03: exact-budget BYOD data has no spare training images; the export must not crash on an empty cohort."""
+    path = core.write_new_predictions(tmp_path / "p.csv", [], ["normal", "dent", "stain"])
+    assert path.read_text().splitlines() == ["image_id,source,known_label,input_mode,input_size,predicted_label,score_normal,score_dent,score_stain"]
+    reload_src = (CAPSTONE / "stage_reload.py").read_text(encoding="utf-8")
+    assert "not_run_no_inputs" in reload_src and "results[0]" not in reload_src
+    assert '"new_image_candidates"' in (CAPSTONE / "stage_data.py").read_text(encoding="utf-8")
+
+
+def test_exact_budget_byod_has_no_spare_training_images():
+    """BSA-03 reproduction: 214 / 108 / 54 images fill the 128 / 64 / 32 budget with nothing left over."""
+    records = _records({"normal": 214, "dent": 108, "stain": 54})
+    _group(records)
+    core.build_split_rows(records)
+    spare = [r for r in records if r["split"] == "train" and not r["selected"]]
+    selected = sum(r["selected"] for r in records)
+    assert selected == 224 and len(spare) <= 3
+
+
+def test_optional_activities_are_guarded_without_canonical_c(notebook):
+    """BSA-04: with an honest no-C canonical record the activities explain and skip instead of raising KeyError."""
+    cells = ["".join(c["source"]) for c in notebook["cells"] if c["cell_type"] == "code"]
+    exercise = next(c for c in cells if "RUN_SYNTHETIC_FRACTION_EXERCISE and 'C' not in RECORD['arms_run']" in c)
+    review = next(c for c in cells if "RUN_HUMAN_REVIEW_EXTENSION and 'C' not in RECORD['arms_run']" in c)
+    printed = []
+    namespace = {"RECORD": {"arms_run": ["A", "B"], "generation_status": {"shortfall": ["spots: 23 usable of 32 attempts (minimum 24)"]}},
+                 "RUN_SYNTHETIC_FRACTION_EXERCISE": True, "RUN_HUMAN_REVIEW_EXTENSION": True, "print": printed.append,
+                 "run_stage": lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not fit"))}
+    exec(compile(exercise, "exercise", "exec"), namespace)
+    exec(compile(review, "review", "exec"), namespace)
+    assert len(printed) == 2 and all(p.startswith("Skipped") for p in printed)
+
+
+def test_byod_records_do_not_inherit_bosch_facts(notebook):
+    """BSA-05: attribution and limitations are built from the active data audit, not Bosch literals."""
+    records = next("".join(c["source"]) for c in notebook["cells"] if "Write environment, run summary, limitations and attribution" in "".join(c["source"]))
+    assert "product A only" not in records and "ten label-conflict" not in records
+    byod_branch = records.split("else:\n    dataset_terms", 1)[1].split("dataset_row", 1)[0]
+    assert "CC BY-SA" not in byod_branch and "No Bosch dataset material" in byod_branch
+
+
+def test_description_stop_reason_is_recorded():
+    """BSA-06: the token count alone does not establish truncation."""
+    phi4 = (CAPSTONE / "stage_phi4.py").read_text(encoding="utf-8")
+    assert '"stop_reason": stop_reason' in phi4 and "hit_token_limit" not in phi4
+
+
+def test_every_frozen_source_is_written_before_the_freeze(notebook):
+    """BSA-01 follow-up: the freeze binds all stage sources, so every %%writefile cell must precede the fit run."""
+    sources = ["".join(c["source"]) for c in notebook["cells"]]
+    fit = next(i for i, s in enumerate(sources) if s.startswith("run_stage('fit', 'lab', 'stage_fit.py')"))
+    written = {s.split("\n", 1)[0].split("/")[-1]: i for i, s in enumerate(sources) if s.startswith("%%writefile")}
+    assert set(core.STAGE_SOURCES) <= set(written)
+    assert all(i < fit for name, i in written.items() if name in core.STAGE_SOURCES), {n: i for n, i in written.items() if i > fit}

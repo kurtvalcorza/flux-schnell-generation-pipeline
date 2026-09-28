@@ -103,19 +103,19 @@ def main() -> None:
     train = sorted((r for r in rows if r["selected"]), key=lambda r: (order.index(r["label"]), r["budget_rank"]))
 
     if args.part == "real":
-        train_items = [(r["file_sha256"], core.load_gray(data_root / r["relpath"])[0]) for r in train]
+        train_items = [(r["file_sha256"], core.load_verified_gray(data_root / r["relpath"], r)) for r in train]
         det, views = features_with_views(model, train_items, device, aug_log)
         np.savez(feat_dir / "train.npz", image_id=np.array([r["image_id"] for r in train]), label=np.array([order.index(r["label"]) for r in train]), det=det, views=views)
         print(f"training budget: {len(train)} images x (1 deterministic + {core.N_VIEWS} views)")
         val = sorted((r for r in rows if r["split"] == "val"), key=lambda r: r["image_id"])
-        vdet = embed(model, [core.load_gray(data_root / r["relpath"])[0] for r in val], device)
+        vdet = embed(model, [core.load_verified_gray(data_root / r["relpath"], r) for r in val], device)
         np.savez(feat_dir / "val.npz", image_id=np.array([r["image_id"] for r in val]), label=np.array([order.index(r["label"]) for r in val]), group=np.array([r["group_id"] for r in val]), det=vdet)
         print(f"validation: {len(val)} images (deterministic preprocessing only)")
         core.write_jsonl(out / "augmentation_views.jsonl", aug_log)
         sheet = []
         for label in order:
             r = next(x for x in train if x["label"] == label)
-            image = core.load_gray(data_root / r["relpath"])[0]
+            image = core.load_verified_gray(data_root / r["relpath"], r)
             params = core.view_params(r["file_sha256"], AUG_SEED)
             sheet.append((image, f"{label} original"))
             sheet += [(core.apply_view(image, p), f"view {p['view']} flip={int(p['hflip'])}\nb{p['brightness']} c{p['contrast']}") for p in params]

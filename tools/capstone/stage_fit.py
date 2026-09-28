@@ -181,6 +181,10 @@ def main() -> None:
     referenced = {name: out / name for name in ("data_manifest.json", "split_manifest.csv", "caption_records.jsonl", "prompts.json", "generation_manifest.jsonl", "generation_status.json", "synthetic_training_overlap.json", "augmentation_views.jsonl", "synthetic_augmentation_views.jsonl")}
     referenced.update({f"features/{n}": work / "features" / f"{n}.npz" for n in ("train", "synthetic", "val")})
     referenced.update({f"heads/{p.stem}": p for p in sorted(heads_dir.glob("*.safetensors"))})
+    # The thumbnail signatures used by the post-freeze overlap audit, and the code that defines preprocessing,
+    # fitting, evaluation and export, are bound too: changing any of them after this point fails verify_frozen.
+    referenced["audit/signatures"] = work / "audit" / "signatures.npz"
+    referenced.update(core.source_files(Path(__file__).resolve().parent))
     frozen = core.freeze_record(out / "experiment_config.json", record, referenced, base)
     print(f"experiment frozen: record SHA-256 {frozen['record_sha256'][:16]}..., {len(frozen['frozen_files'])} inputs pinned; export choice {selection} ({time.time() - started:.1f} s)")
 

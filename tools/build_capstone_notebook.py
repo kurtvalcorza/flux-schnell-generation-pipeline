@@ -556,11 +556,11 @@ The fixed instruction asks for visible texture, illumination and the shape of an
 S4_RUN = """
 run_stage('phi4', 'phi4', 'stage_phi4.py')
 CAPTIONS = load('caption_records.jsonl')
-table(['class', '#', 'image', 'tokens', 'description'], [[r['label'], r['exemplar_rank'], r['image_id'], r['new_tokens'], r['response'].replace('|', '/')] for r in CAPTIONS])
+table(['class', '#', 'image', 'tokens', 'stop reason', 'description'], [[r['label'], r['exemplar_rank'], r['image_id'], r['new_tokens'], r['stop_reason'], r['response'].replace('|', '/')] for r in CAPTIONS])
 """
 
 S4_NOTICE = """
-**What to notice.** Read each description and sort its claims into three bins: *observed* (a line, a bright blob, horizontal banding, even lighting), *inferred but plausible* (a "scratch" where a thin bright line is visible), and *guessed* (a material, a process, a cause, a severity). Descriptions of `normal` images sometimes report a mark, and defect descriptions sometimes miss one; the model was not told the label. A description that hits the 96-token limit is cut off (`tokens` = 96). Greedy decoding makes the text repeatable for the same model and inputs, not correct.
+**What to notice.** Read each description and sort its claims into three bins: *observed* (a line, a bright blob, horizontal banding, even lighting), *inferred but plausible* (a "scratch" where a thin bright line is visible), and *guessed* (a material, a process, a cause, a severity). Descriptions of `normal` images sometimes report a mark, and defect descriptions sometimes miss one; the model was not told the label. The `stop reason` column says how each description ended: `end_of_sequence` means the model finished; `max_new_tokens` means it was cut off at the 96-token limit (a description can use all 96 tokens and still end on its own, so the token count alone does not show truncation). Greedy decoding makes the text repeatable for the same model and inputs, not correct.
 """
 
 S4_CHECK = checkpoint(
@@ -656,7 +656,7 @@ This is the controlled comparison. For each seed (17, 29, 43), `slot_schedule` (
 
 So every arm sees the same number of updates, the same class balance and the same head initialisation per seed. C does not get more training; it gets a different distribution of defect examples. The head is fitted with AdamW (learning rate 0.001, weight decay 0.0001), batch 32, on the CPU with deterministic algorithms. After each epoch it is scored on **validation**; the epoch with the highest validation macro-F1 is kept (the earlier epoch wins a tie). Among the arms fitted with the canonical seed 17, the one with the highest validation macro-F1 is chosen for export (ties go to A, then B, then C).
 
-Then the experiment is **frozen**: `experiment_config.json` records every setting and the SHA-256 of every input (split, prompts, generation manifest, features, heads). The test stage refuses to run if any of them changes.
+Then the experiment is **frozen**: `experiment_config.json` records every setting and the SHA-256 of every input (split, prompts, generation manifest, features, heads, the thumbnail signatures used by the overlap audit) and of the code that defines preprocessing, fitting, evaluation and export (the shared core and every stage script). The test, export and reload stages refuse to run if any of them changes, and every held-out image is re-checked against its recorded digests before it is scored.
 
 **Predict first:** on validation, will C beat B for every seed, some seeds, or none?
 """
@@ -749,7 +749,7 @@ S10_NOTICE = f"""
 
 Complete these sentences in your own words, using only numbers printed above:
 
-1. **Task:** *On product A of the Bosch SDI dataset, with 128 / 64 / 32 real training images and a frozen ResNet-18 with a linear head, we compared …*
+1. **Task:** *On product A of the Bosch SDI dataset (or: on my own dataset, described by its source and classes), with 128 / 64 / 32 real training images and a frozen ResNet-18 with a linear head, we compared …*
 2. **Principal result:** *Mean test macro-F1 was … for A, … for B and … for C; C − B was … (approximate 95% interval …), with per-seed differences of …*
 3. **Baseline / reference:** *The majority baseline scored accuracy … but macro-F1 …*
 4. **Important failure mode or uncertainty:** *Most remaining errors were …; the spot class rests on … test images; …*
@@ -764,14 +764,16 @@ S11_INTRO = """
 
 The exported classifier is the validation-selected arm for the predeclared canonical seed 17, chosen from validation scores only. The artifact in `classifier/` contains `head.safetensors` (weight 3 × 512 and bias, float32) and `manifest.json` (format, class order and indices, decision rule, backbone identity with revision and SHA-256, preprocessing definition, selection record, file digests). No images or features are embedded.
 
-The export stage also computes reference logits for nine fixed real test images on the CPU. The reload stage is a **new process** that imports nothing from training: it checks the manifest, the file set and every digest, loads the head with `safetensors` (plain arrays; nothing is unpickled), rebuilds ResNet-18 from its verified weights, recomputes the nine logits and requires them to match within an absolute tolerance of 1e-5. Loading the files is not enough; reproducing the outputs is the check. It then scores new images: six unused training-partition images (two per class) that were never used for fitting, captioning or generation, plus any images in `NEW_IMAGE_DIR`.
+The export stage also computes reference logits and the decisions they imply for nine fixed real test images on the CPU. The reload stage is a **new process** that imports nothing from training. It checks the manifest, the file set and every digest; checks the artifact's **meaning** against the frozen experiment (class names, order and indices, decision rule, preprocessing, backbone, the selected head and the experiment record); loads the head with `safetensors` (plain arrays; nothing is unpickled); rebuilds ResNet-18 from its verified weights; re-verifies each reference image against its recorded digests; recomputes the nine logits; and requires them to match within an absolute tolerance of 1e-5 **and** to name the same class for every example. It then scores new images: up to six unused training-partition images (two per class) that were never used for fitting, captioning or generation, plus any images in `NEW_IMAGE_DIR`. If your data has no spare training images and `NEW_IMAGE_DIR` is empty, this step is recorded as not run and the CSV has only its header.
 """
 
 S11_RUN = """
 run_stage('export', 'lab', 'stage_export.py')
 run_stage('reload', 'lab', 'stage_reload.py')
 PARITY = load('reload_parity.json')
-print(f"reload parity: max |logit difference| {PARITY['max_abs_logit_difference']:.2e} <= {PARITY['tolerance']:.0e}: {PARITY['passed']}; same predictions: {PARITY['same_predictions']}")
+print(f"reload parity: max |logit difference| {PARITY['max_abs_logit_difference']:.2e} <= {PARITY['tolerance']:.0e}; replayed decisions identical: {PARITY['same_predictions']} -> {PARITY['passed']}")
+NEW = PARITY['new_image_inference']
+print(f"new-image inference: {NEW['status']} ({NEW['scored']} scored of {NEW['candidates']} candidates, {len(NEW['rejected'])} rejected)")
 """
 
 S11_NOTICE = """
@@ -780,7 +782,7 @@ S11_NOTICE = """
 
 S11_CHECK = checkpoint(
     "The reload stage loaded the files without error. Why is that not enough, and what does the parity check add?",
-    "Loading proves that files parse, not that they reproduce the classifier that was evaluated: a wrong class order, a different backbone file, a changed preprocessing step or a truncated tensor can all load cleanly and still give different predictions. Recomputing logits for fixed real images in a new process and requiring agreement within 1e-5 shows that the artifact, the pinned backbone and the preprocessing definition together reproduce the exported model's outputs.",
+    "Loading proves that files parse, not that they reproduce the classifier that was evaluated. Two different checks are needed. Numbers: recomputing logits for fixed real images in a new process and requiring agreement within 1e-5 shows the tensors, the pinned backbone file and the preprocessing code reproduce the exported outputs. Meaning: a reversed class list would leave every logit identical while swapping what the columns are called, so numeric parity cannot catch it. The reload stage therefore also checks the manifest against the frozen experiment (class order and indices, decision rule, preprocessing, backbone, selected head, experiment record) and requires every replayed decision to name the same class. What neither check covers: whether the preprocessing is right for new kinds of images, or whether the scores are calibrated.",
 )
 
 S12_INTRO = """
@@ -815,15 +817,23 @@ summary = {
     'evidence': 'tutorial evidence from one grouped split and one generated pool; not a benchmark or production result',
 }
 (OUT / 'run_summary.json').write_text(json.dumps(summary, indent=2))
+G = DATA['grouping']
+if DATA_SOURCE == 'bosch':
+    scope_line = '- One custom, deterministic 60/20/20 grouped split of product A. Groups come from exact and perceptual duplicates only; the source supplies no specimen or session identifiers, so this is an exploratory image-group benchmark, not evidence about independent physical specimens.'
+else:
+    declared = DATA['inventory'].get('declared_groups', 0)
+    scope_line = (f"- One deterministic 60/20/20 grouped split of the user-supplied dataset ({DATA['inventory']['entries']} images). "
+                  + (f'{declared} images carried a declared group; groups were also merged by exact and perceptual duplicates.' if declared else 'No groups were declared, so groups come from exact and perceptual duplicates only and the evaluation is an exploratory image-group benchmark.'))
 limitations = [
     '# Limitations of this run', '',
-    '- One custom, deterministic 60/20/20 grouped split of product A. Groups come from exact and perceptual duplicates only; the source supplies no specimen or session identifiers, so this is an exploratory image-group benchmark, not evidence about independent physical specimens.',
+    scope_line,
     f"- The test partition holds {METRICS['test_counts']} images; per-class metrics for the rarest class rest on few images.",
     '- One generated pool of 32 candidates per defect class from fixed seeds. Generated labels are the prompt\'s intended labels and were not validated by anyone. Results may differ for another pool.',
-    '- Phi-4 and FLUX run frozen in 4-bit (NF4); every number is the 4-bit models\'. Pretraining overlap of Phi-4, FLUX or ResNet-18 with this public dataset cannot be excluded.',
+    '- Phi-4 and FLUX run frozen in 4-bit (NF4); every number is the 4-bit models\'. ' + ('Pretraining overlap of Phi-4, FLUX or ResNet-18 with this public dataset cannot be excluded.' if DATA_SOURCE == 'bosch' else 'If your images are, or resemble, publicly available images, pretraining overlap of Phi-4, FLUX or ResNet-18 with them cannot be excluded.'),
     '- The bootstrap interval is approximate and conditional on this split and pool; it does not include training or generation variability.',
     '- Scores are softmax of uncalibrated logits under an argmax rule; no deployment threshold was chosen or validated.',
-    '- Documented dataset counts differ from the measured archive for normal images; ten label-conflict duplicates were excluded.',
+    *(['- Documented dataset counts differ from the measured archive for normal images.'] if DATA_SOURCE == 'bosch' else []),
+    f"- {len(G['label_conflict_images'])} images in {G['label_conflict_groups']} label-conflict duplicate groups were excluded.",
     '- This is not a production inspection system and makes no claim about factory-level performance.',
 ]
 if RECORD['smoke_run']:
@@ -834,8 +844,12 @@ if not METRICS['comparison_valid']:
     limitations.append('- ' + METRICS['validity_note'])
 (OUT / 'limitations.md').write_text('\n'.join(limitations) + '\n')
 if DATA_SOURCE == 'bosch':
+    dataset_terms = ('`split_manifest.csv` and the figures that show dataset images are adapted dataset material: if you redistribute them, credit the source above and apply CC BY-SA 4.0.\n\n'
+                     'Cite the dataset\'s accompanying paper: Wang, R., Hoppe, S., Monari, E., & Huber, M. F. (2023). Defect Transfer GAN: Diverse defect synthesis for data augmentation. https://doi.org/10.48550/arXiv.2302.08366')
     dataset_row = '| Dataset | Bosch Surface Defect Inspection dataset, https://github.com/boschresearch/The-Surface-Defect-Inspection-Dataset at commit c6e0afe66e9dbd9d99326c986ea884ddf2aad9f8, archive SHA-256 d33ea340151cdf909f3807a37e00d335c66eb8960b0c2eb568fd9fc75d96fa7c | CC BY-SA 4.0 (attribution; share-alike for adapted material) |'
 else:
+    dataset_terms = ('The dataset was supplied by the user. Its terms are set by its owner and are not determined by this notebook; `split_manifest.csv` and the figures '
+                     'that show its images carry those terms. No Bosch dataset material was used in this run.')
     dataset_row = f"| Dataset | user-supplied BYOD zip, SHA-256 {DATA['acquisition'].get('byod_zip_sha256')} | set by the data owner; not determined by this notebook |"
 attribution = f"""# Attribution and licence record
 
@@ -849,11 +863,11 @@ Each component keeps its own licence; they are not assumed to share one.
 | Feature extractor | {FEATURE_STATE['backbone']['id']} @ {FEATURE_STATE['backbone']['revision']} | {FEATURE_STATE['backbone']['license']} |
 | Notebook code | kurtvalcorza/flux-schnell-generation-pipeline | see the repository's LICENSE |
 
-Changes made to dataset material in this run: product A only; ten label-conflict duplicates excluded; images converted to three-channel 224 x 224 letterboxed tensors for feature extraction; augmented views (horizontal flip, brightness and contrast within +/-10%). `split_manifest.csv` and the figures that show dataset images are adapted dataset material: if you redistribute them, credit the source above and apply CC BY-SA 4.0.
+Changes made to dataset material in this run: {DATA['experiment_scope']}; {len(G['label_conflict_images'])} label-conflict duplicate images excluded; images converted to three-channel 224 x 224 letterboxed tensors for feature extraction; augmented views (horizontal flip, brightness and contrast within +/-10%).
 
-Generated images in `generated/` were produced by FLUX.1 [schnell] from prompts compiled from descriptions of CC BY-SA 4.0 images. Their licensing depends on the model licence and on how you use them; this record does not decide that question for you.
+{dataset_terms}
 
-Cite the dataset's accompanying paper: Wang, R., Hoppe, S., Monari, E., & Huber, M. F. (2023). Defect Transfer GAN: Diverse defect synthesis for data augmentation. https://doi.org/10.48550/arXiv.2302.08366
+Generated images in `generated/` were produced by FLUX.1 [schnell] from prompts compiled from descriptions of the dataset images above. Their licensing depends on the model licence, the source images' terms and how you use them; this record does not decide that question for you.
 """
 (OUT / 'ATTRIBUTION.md').write_text(attribution)
 (OUT / 'completion_record_template.md').write_text('# Completion record (a learning aid, not a submission)\n\n- My prediction before running:\n- C - B (mean, interval, per seed):\n- What the majority baseline taught me:\n- One description claim that was guessed, not observed:\n- One generated candidate I would reject, and why:\n- My bounded conclusion:\n- What I would run next:\n')
@@ -864,7 +878,7 @@ print('TEST MACRO-F1 (mean over seeds) ' + ', '.join(f'{a}={v:.4f}' for a, v in 
 for name, c in METRICS['contrasts'].items():
     print(f"CONTRAST    {name}: {c['mean_difference']:+.4f}, approx. 95% interval [{c['interval_95'][0]:+.4f}, {c['interval_95'][1]:+.4f}]")
 print(f"VALIDITY    comparison valid: {METRICS['comparison_valid']} | smoke run: {RECORD['smoke_run']}")
-print(f"EXPORT      arm {RECORD['selection']['arm']} seed {RECORD['selection']['seed']} | reload parity {PARITY['passed']} (max diff {PARITY['max_abs_logit_difference']:.1e})")
+print(f"EXPORT      arm {RECORD['selection']['arm']} seed {RECORD['selection']['seed']} | reload parity {PARITY['passed']} (max diff {PARITY['max_abs_logit_difference']:.1e}, same decisions {PARITY['same_predictions']}) | new-image inference {PARITY['new_image_inference']['status']}")
 print(f"RESOURCES   model stages {summary['model_time_seconds_excluding_installs']} s; wall {summary['wall_seconds_since_configuration']} s; "
       f"peak GPU in use {max(r['peak_gpu_used_mib'] for r in STAGE_LOG.values())} MiB; peak child RSS {max(r['peak_child_rss_mib'] for r in STAGE_LOG.values())} MiB; "
       f"lowest host memory available {min(r['min_host_available_mib'] for r in STAGE_LOG.values() if r['min_host_available_mib'] is not None)} MiB")
@@ -877,7 +891,7 @@ print('=' * 100)
 S13_INTRO = """
 ## 13 · Optional activities, troubleshooting and further exploration  <sub>(optional)</sub>
 
-None of these is needed for the default path, and a failure here does not affect the results above.
+None of these is needed for the default path, and a failure here does not affect the results above. The synthetic-fraction activity (13.1) is switched on by default because it reuses the features already computed, touches only validation data and takes seconds; set `RUN_SYNTHETIC_FRACTION_EXERCISE = False` to skip it. Its results are written to `extensions/` and are not part of `run_summary.json`, which was completed in Section 12. Both 13.1 and 13.2 are skipped with an explanation when the canonical arm C was not run.
 
 ### 13.1 Change one thing: the synthetic fraction (Predict → Change → Run → Observe → Explain)
 
@@ -887,7 +901,10 @@ This activity uses **validation only** and only after the canonical result exist
 """
 
 S13_EXERCISE = """
-if RUN_SYNTHETIC_FRACTION_EXERCISE:
+if RUN_SYNTHETIC_FRACTION_EXERCISE and 'C' not in RECORD['arms_run']:
+    print('Skipped: the canonical arm C was not run (' + '; '.join(RECORD['generation_status']['shortfall']) + '), so there is no canonical C to compare with. '
+          'Fitting an exploratory C here would be a redesigned study, not a completion of the omitted condition.')
+elif RUN_SYNTHETIC_FRACTION_EXERCISE:
     p = float(EXERCISE_SYNTHETIC_PROBABILITY)
     if not 0.0 <= p <= 1.0:
         raise ValueError('EXERCISE_SYNTHETIC_PROBABILITY must be between 0 and 1')
@@ -907,7 +924,9 @@ S13_REVIEW = """
 """
 
 S13_REVIEW_RUN = """
-if RUN_HUMAN_REVIEW_EXTENSION:
+if RUN_HUMAN_REVIEW_EXTENSION and 'C' not in RECORD['arms_run']:
+    print('Skipped: the canonical arm C was not run (generation shortfall), so a human-reviewed C has no canonical counterpart.')
+elif RUN_HUMAN_REVIEW_EXTENSION:
     if not HUMAN_REVIEW_CSV or not Path(HUMAN_REVIEW_CSV).is_file():
         print(f"Set HUMAN_REVIEW_CSV to a completed copy of {OUT / 'human_review_template.csv'}")
     else:
@@ -994,8 +1013,8 @@ SCRIPT_NOTES = {
     "stage_phi4.py": "The next cell saves the Phi-4 description stage; the cell after it runs it in the `phi4` environment.",
     "stage_prompts.py": "The next cell saves the prompt compilation stage.",
     "stage_flux.py": "The next cell saves the FLUX generation stage.",
-    "stage_evaluate.py": "The next cell saves the test stage. It starts by verifying the frozen record.",
-    "stage_export.py": "The next two cells save the export stage and the fresh-process reload stage.",
+    "stage_evaluate.py": "The next three cells save the stages that run **after** the freeze: the test stage (Section 9), the export stage and the fresh-process reload stage (Section 11). They are saved here, before the fit, so that the freeze binds their code together with the core, the data, feature and fitting stages: changing any of them afterwards makes the test, export and reload stages refuse to run. The test stage starts by verifying the frozen record and re-checking every test image against its recorded digests.",
+    "stage_export.py": "",
     "stage_reload.py": "",
 }
 
@@ -1038,11 +1057,11 @@ def build() -> dict:
     cells += [md(S5_NOTICE), md(S5_CHECK), md(S6_INTRO)]
     cells += script_cells("stage_flux.py")
     cells.append(code(S6_RUN))
-    cells += [md(S6_NOTICE), md(S6_CHECK), md(S7_INTRO), code(S7_RUN), md(S7_NOTICE), md(S8_INTRO), code(S8_RUN), md(S8_NOTICE), md(S8_CHECK), md(S9_INTRO)]
-    cells += script_cells("stage_evaluate.py")
+    cells += [md(S6_NOTICE), md(S6_CHECK), md(S7_INTRO), code(S7_RUN), md(S7_NOTICE), md(S8_INTRO)]
+    cells += script_cells("stage_evaluate.py") + script_cells("stage_export.py") + script_cells("stage_reload.py")
+    cells += [code(S8_RUN), md(S8_NOTICE), md(S8_CHECK), md(S9_INTRO)]
     cells.append(code(S9_RUN))
     cells += [md(S9_NOTICE), md(S9_CHECK), md(S10_INTRO), code(S10_RUN), md(S10_NOTICE), md(S11_INTRO)]
-    cells += script_cells("stage_export.py") + script_cells("stage_reload.py")
     cells.append(code(S11_RUN))
     cells += [md(S11_NOTICE), md(S11_CHECK), md(S12_INTRO), code(S12_RUN, form=True), md(S13_INTRO), code(S13_EXERCISE), md(S13_REVIEW), code(S13_REVIEW_RUN), md(S13_BYOD), code(S13_BYOD_RUN), md(S13_TROUBLE), md(DISCLOSURE)]
     for n, cell in enumerate(cells):

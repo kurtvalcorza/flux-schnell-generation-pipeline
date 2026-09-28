@@ -23,6 +23,23 @@ Recorded 2026-09-28 in a CPU container, Python 3.12, `torch 2.14.0+cpu`, NumPy 2
 - The data, feature, fit, test, export and reload stages, and every controller cell of the notebook in an IPython kernel, ran end to end on the real archive with stand-in scripts in place of the two GPU stages; reload parity was exact. The stand-ins make no scientific result.
 - A BYOD zip built from 800 Bosch images with renamed classes ran through every stage; a manifest without a `class` column was refused with the missing column named.
 
+## Review of `eb7f0d5` (findings BSA-01 to BSA-06) and fixes
+
+A notebook review of `eb7f0d5` (verdict: needs revision) reported three major and three smaller findings, each with an acceptance check, and supplied a probe package that ran the notebook's extracted stage scripts with stand-ins (authored captions instead of Phi-4, NumPy pixels instead of FLUX, an adaptive-average feature module instead of ResNet-18). The fixes are in `tools/capstone/` and the generator; the notebook was regenerated, not hand-edited.
+
+| Finding | Fix | Offline check (post-fix) |
+|---|---|---|
+| BSA-01 the freeze did not bind held-out pixels, overlap signatures or stage code | `load_verified_gray` re-checks every manifest-listed image's file SHA-256 and decoded-pixel digest before the feature, test, export and reload stages use it; the freeze also pins `audit/signatures.npz` and all ten stage sources (`STAGE_SOURCES`). The evaluate, export and reload scripts are therefore saved in Section 8, before the fit | reviewer's mutations re-run: changed test image, signature file, preprocessing script and split-manifest row each refused before scoring (exit 2); unchanged inputs pass |
+| BSA-02 reload checked numbers, not meaning | `check_artifact_semantics` binds classes, order, `class_index`, decision rule, preprocessing, backbone, experiment record, selection and head digest to the frozen record; `replay_check` requires identical logits **and** identical named decisions; the reload reference is digest-bound in the manifest | reversed class list, inconsistent indices, duplicate names and a changed preprocessing field each refused (exit 2); unchanged artifact passes with max logit difference 0.0 and identical decisions |
+| BSA-03 an exact-budget BYOD set crashed the new-image preview | fixed-header `write_new_predictions`; `new_image_inference.status` (`ran`, `not_run_no_inputs`, `not_run_all_inputs_rejected`) in `reload_parity.json`; the data stage reports spare images per class and warns early | the reviewer's 376-image set (214 / 108 / 54) ran all nine stages; reload passed and recorded `not_run_no_inputs` with a header-only CSV |
+| BSA-04 optional activities raised `KeyError` without canonical C | both activity cells skip with an explanation when C was not run; the default-on activity is explained | exact cell with a no-C record: no exception, no fit started |
+| BSA-05 BYOD records repeated Bosch facts | limitations, attribution, dataset-change text and the metrics evidence line are built from the active data audit; Bosch licence text only on the Bosch path | notebook-kernel harness on a BYOD zip: no Bosch terms or counts in `limitations.md` or `ATTRIBUTION.md` |
+| BSA-06 96 tokens was described as truncation | `stop_reason` (`end_of_sequence`, `max_new_tokens`, `other`) replaces `hit_token_limit`; the table and prose use it | source check only; the real tokenizer's stop behaviour needs the hosted run |
+
+User-visible changes: `new_image_rejections.json` is replaced by `new_image_inference` inside `reload_parity.json`; `caption_records.jsonl` carries `stop_reason`; the artifact manifest carries `reload_reference_sha256`; reload refuses artifacts whose metadata disagrees with the frozen experiment; the evaluate, export and reload scripts are saved in Section 8.
+
+Evidence boundary: the reviewer's probe scripts were re-run with expectations inverted, and the notebook's own cells were executed in an IPython kernel on the real Bosch archive and on a BYOD zip, both with stand-ins for the two GPU stages and a CPU backbone. None of this is a hosted run, and no Phi-4 or FLUX output was produced.
+
 ## Verification procedure
 
 1. Resolve the exact commit and notebook blob under review; confirm CI is green.

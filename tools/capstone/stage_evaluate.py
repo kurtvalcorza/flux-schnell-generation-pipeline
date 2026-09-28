@@ -31,7 +31,8 @@ def main(cfg_path: str) -> None:
     test = sorted((r for r in rows if r["split"] == "test"), key=lambda r: r["image_id"])
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = sf.build_backbone(sf.stage_backbone(work), device)
-    x = sf.embed(model, [core.load_gray(data_root / r["relpath"])[0] for r in test], device)
+    # Each test image is re-verified against the frozen manifest's file and pixel digests before it is scored.
+    x = sf.embed(model, [core.load_verified_gray(data_root / r["relpath"], r) for r in test], device)
     y = np.array([order.index(r["label"]) for r in test])
     groups = [r["group_id"] for r in test]
 
@@ -72,7 +73,7 @@ def main(cfg_path: str) -> None:
     overlap = {"synthetic_vs_heldout": {"max_correlation": float(best.max()) if len(best) else None, "flagged": flagged}, "exact_pixel_duplicates_across_partitions": cross_pixels}
     valid = not flagged and cross_pixels == 0
     metrics = {
-        "evidence": "tutorial evidence from one grouped split of product A and one generated pool; not factory-level or production performance",
+        "evidence": f"tutorial evidence from one grouped split ({core.read_json(out / 'data_manifest.json')['experiment_scope']}) and one generated pool; not factory-level or production performance",
         "test_counts": {c: int((y == i).sum()) for i, c in enumerate(order)},
         "arms": {a: core.ARM_NAMES[a] for a in per_run},
         "per_run": per_run, "summary": summary, "contrasts": contrasts,
@@ -130,7 +131,7 @@ def main(cfg_path: str) -> None:
     items = []
     for arm in [a for a in ("B", "C") if a in arms]:
         wrong = [n for n in range(len(test)) if predictions[(arm, canon)][n] != y[n] and y[n] != majority][:6] + [n for n in range(len(test)) if predictions[(arm, canon)][n] != y[n] and y[n] == majority][:2]
-        items += [(core.load_gray(data_root / test[n]["relpath"])[0], f"{arm}: true {order[y[n]]}\npred {order[predictions[(arm, canon)][n]]}") for n in wrong]
+        items += [(core.load_verified_gray(data_root / test[n]["relpath"], test[n]), f"{arm}: true {order[y[n]]}\npred {order[predictions[(arm, canon)][n]]}") for n in wrong]
     if items:
         core.contact_sheet(items, title=f"Misclassified TEST images, seed {canon} (arm: true -> predicted)").save(figures / "error_gallery.png")
     print(core.canonical_json({"macro_f1_mean": {a: round(s["macro_f1"]["mean"], 4) for a, s in summary.items()}, "contrasts": {c: [round(v["mean_difference"], 4), [round(z, 4) for z in v["interval_95"]]] for c, v in contrasts.items()}, "comparison_valid": valid}))

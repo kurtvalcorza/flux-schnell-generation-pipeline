@@ -134,10 +134,14 @@ def main(cfg_path: str) -> None:
         new_tokens = generated[:, inputs["input_ids"].shape[1]:]
         text = processor.batch_decode(new_tokens, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0].strip()
         n = int(new_tokens.shape[1])
+        eos = generation_config.eos_token_id
+        eos_ids = set(eos if isinstance(eos, list | tuple) else [eos]) - {None}
+        last = int(new_tokens[0, -1]) if n else None
+        stop_reason = "end_of_sequence" if last in eos_ids else ("max_new_tokens" if n >= MAX_NEW_TOKENS else "other")
         records.append({
             "image_id": r["image_id"], "label": r["label"], "exemplar_rank": r["budget_rank"], "split": r["split"],
             "image_sha256": r["file_sha256"], "instruction": INSTRUCTION, "response": text, "new_tokens": n,
-            "hit_token_limit": n >= MAX_NEW_TOKENS, "decoding": DECODING, "model_id": MODEL_ID, "model_revision": MODEL_REVISION,
+            "stop_reason": stop_reason, "eos_token_ids": sorted(eos_ids), "decoding": DECODING, "model_id": MODEL_ID, "model_revision": MODEL_REVISION,
             "label_shown_to_model": False, "seconds": round(time.time() - t, 2),
         })
         print(f"[{r['label']} #{r['budget_rank']}] {r['image_id']}: {text}")

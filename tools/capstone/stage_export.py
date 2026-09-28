@@ -29,7 +29,7 @@ def main(cfg_path: str) -> None:
     manifest = {
         "classes": order,
         "class_index": {c: i for i, c in enumerate(order)},
-        "decision_rule": "argmax over logits; softmax scores are uncalibrated",
+        "decision_rule": core.DECISION_RULE,
         "backbone": sf.BACKBONE,
         "preprocessing": core.PREPROCESSING,
         "selection": {**selection, "arm_name": core.ARM_NAMES[selection["arm"]]},
@@ -37,14 +37,17 @@ def main(cfg_path: str) -> None:
         "training_data": "no images or features are embedded; the head was fitted on features of the selected training budget (and, for arm C, generated images)",
         "intended_use": "tutorial reconstruction and inference on product-A-like surface images; not a production inspection system",
     }
-    written = core.write_artifact(out / "classifier", head["weight"], head["bias"], manifest)
     rows = core.read_split_manifest(out / "split_manifest.csv")
     ref = reference_rows(rows, order)
     data_root = work / "data" / ("sdi" if cfg["data_source"] == "bosch" else "byod")
     model = sf.build_backbone(sf.stage_backbone(work), "cpu")  # CPU on both sides of the reload check
-    feats = sf.embed(model, [core.load_gray(data_root / r["relpath"])[0] for r in ref], "cpu")
+    feats = sf.embed(model, [core.load_verified_gray(data_root / r["relpath"], r) for r in ref], "cpu")
     logits = core.head_logits(feats, head["weight"], head["bias"])
-    core.write_json(out / "reload_reference.json", {"device": "cpu", "tolerance": core.PARITY_TOLERANCE, "examples": [{"image_id": r["image_id"], "relpath": r["relpath"], "label": r["label"], "logits": [float(v) for v in logits[n]]} for n, r in enumerate(ref)]})
+    # Expected decisions are named with the frozen experiment's class order, not the artifact's own list.
+    core.write_json(out / "reload_reference.json", {"device": "cpu", "tolerance": core.PARITY_TOLERANCE, "examples": [{"image_id": r["image_id"], "relpath": r["relpath"], "label": r["label"], "expected_prediction": order[int(logits[n].argmax())], "logits": [float(v) for v in logits[n]]} for n, r in enumerate(ref)]})
+    manifest["reload_reference_sha256"] = core.sha256_file(out / "reload_reference.json")
+    written = core.write_artifact(out / "classifier", head["weight"], head["bias"], manifest)
+    core.check_artifact_semantics(written, record=record, preprocessing=core.PREPROCESSING, backbone=sf.BACKBONE)
     print(core.canonical_json({"exported": written["selection"], "head_sha256": written["files"][core.ARTIFACT_WEIGHTS]["sha256"], "reference_examples": len(ref)}))
 
 

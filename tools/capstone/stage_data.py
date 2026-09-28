@@ -198,11 +198,14 @@ def main() -> None:
         "budget": split["budget"],
         "selected": selected,
         "unused_training_images": sum(1 for r in experiment if r["split"] == "train" and not r["selected"]),
+        "new_image_candidates": {c: sum(1 for r in experiment if r["split"] == "train" and not r["selected"] and r["label"] == c) for c in split["class_order"]},
         "exemplars": sorted((r["label"], r["budget_rank"], r["image_id"]) for r in experiment if r["exemplar"]),
         "core_version": core.CORE_VERSION,
         "seconds": round(time.time() - started, 1),
     }
     core.write_json(out / "data_manifest.json", manifest)
+    if not all(manifest["new_image_candidates"].values()):
+        print(f"NOTE: unused training images per class {manifest['new_image_candidates']}: Section 11's new-image preview needs spare images or NEW_IMAGE_DIR; without them it is recorded as not run")
     audit = work / "audit"
     audit.mkdir(parents=True, exist_ok=True)
     np.savez(audit / "signatures.npz", image_id=np.array(ids), signature=signatures.astype(np.float16))
