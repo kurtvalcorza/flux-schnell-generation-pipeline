@@ -71,6 +71,12 @@ def stage_and_verify(root: Path) -> dict:
     return {"downloaded_bytes": fetched, "files": len(FILES), "total_bytes": sum(s for _, s, _ in FILES)}
 
 
+def peak_rss_gib() -> float:
+    import resource
+
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 2**20
+
+
 def preload_nvidia_libraries() -> None:
     """Load the pip-installed CUDA libraries globally so bitsandbytes resolves them on images whose system CUDA is older."""
     import ctypes
@@ -112,9 +118,12 @@ def main(cfg_path: str) -> None:
     tokenizer_2 = AutoTokenizer.from_pretrained(str(root / "tokenizer_2"))
 
     # 1) Text encoders only: encode every distinct prompt, keep the embeddings on the CPU, release the encoders.
+    # The checkpoints are bfloat16. Without device_map, from_pretrained converts the whole model to float16 in host
+    # RAM first (9.5 GB for T5-XXL), which exhausts a 12.7 GiB Colab VM. device_map="cuda" converts and moves one
+    # tensor at a time, so host memory holds at most one tensor; every model load in this stage streams this way.
     t1 = time.time()
-    clip = CLIPTextModel.from_pretrained(str(root), subfolder="text_encoder", torch_dtype=fp16).to("cuda").eval()
-    t5 = T5EncoderModel.from_pretrained(str(root), subfolder="text_encoder_2", torch_dtype=fp16).to("cuda").eval()
+    clip = CLIPTextModel.from_pretrained(str(root), subfolder="text_encoder", torch_dtype=fp16, device_map="cuda").eval()
+    t5 = T5EncoderModel.from_pretrained(str(root), subfolder="text_encoder_2", torch_dtype=fp16, device_map="cuda").eval()
     cache, token_counts = {}, {}
     with torch.inference_mode():
         for p in prompts:
@@ -132,19 +141,19 @@ def main(cfg_path: str) -> None:
     del clip, t5
     gc.collect()
     torch.cuda.empty_cache()
-    print(f"encoded {len(cache)} prompts in {encode_seconds} s (peak {encoder_peak:.2f} GiB); encoders released, {torch.cuda.memory_allocated() / 2**30:.2f} GiB still allocated")
+    print(f"encoded {len(cache)} prompts in {encode_seconds} s (peak {encoder_peak:.2f} GiB); encoders released, {torch.cuda.memory_allocated() / 2**30:.2f} GiB still allocated; peak host RSS so far {peak_rss_gib():.2f} GiB")
 
     # 2) 4-bit transformer + float32 VAE; generation from the cached embeddings.
     torch.cuda.reset_peak_memory_stats()
     t2 = time.time()
     quant = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=fp16)
-    transformer = FluxTransformer2DModel.from_pretrained(str(root), subfolder="transformer", quantization_config=quant, torch_dtype=fp16).to("cuda").eval()
-    vae = AutoencoderKL.from_pretrained(str(root), subfolder="vae", torch_dtype=torch.float32).to("cuda").eval()
+    transformer = FluxTransformer2DModel.from_pretrained(str(root), subfolder="transformer", quantization_config=quant, torch_dtype=fp16, device_map="cuda").eval()
+    vae = AutoencoderKL.from_pretrained(str(root), subfolder="vae", torch_dtype=torch.float32, device_map="cuda").eval()
     scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(str(root), subfolder="scheduler")
     pipe = FluxPipeline(scheduler=scheduler, vae=vae, text_encoder=None, tokenizer=tokenizer, text_encoder_2=None, tokenizer_2=tokenizer_2, transformer=transformer)
     pipe.set_progress_bar_config(disable=True)
     load_seconds = round(time.time() - t2, 1)
-    print(f"4-bit transformer loaded in {load_seconds} s; {torch.cuda.memory_allocated() / 2**30:.2f} GiB allocated")
+    print(f"4-bit transformer loaded in {load_seconds} s; {torch.cuda.memory_allocated() / 2**30:.2f} GiB allocated; peak host RSS so far {peak_rss_gib():.2f} GiB")
 
     gen_dir = out / "generated"
     shutil.rmtree(gen_dir, ignore_errors=True)
@@ -195,7 +204,7 @@ def main(cfg_path: str) -> None:
         handle.write("candidate_id,intended_label,decision,reason\n")
         for r in manifest:
             handle.write(f"{r['candidate_id']},{r['intended_label']},,\n")
-    summary = {"model": {"id": MODEL_ID, "revision": MODEL_REVISION, "license": MODEL_LICENSE, "staging": {"repo": STAGING_ID, "revision": STAGING_REVISION}}, "staging": staging, "stage_seconds": stage_seconds, "encode_seconds": encode_seconds, "encoder_peak_gpu_gib": round(encoder_peak, 2), "load_seconds": load_seconds, "generate_seconds": generate_seconds, "transformer_peak_gpu_gib": round(transformer_peak, 2), "token_counts": token_counts, "prompts_sha256": core.sha256_file(prompts_path), "generation_status": status, "precision": PRECISION, "steps": STEPS, "side": SIDE}
+    summary = {"model": {"id": MODEL_ID, "revision": MODEL_REVISION, "license": MODEL_LICENSE, "staging": {"repo": STAGING_ID, "revision": STAGING_REVISION}}, "staging": staging, "stage_seconds": stage_seconds, "encode_seconds": encode_seconds, "encoder_peak_gpu_gib": round(encoder_peak, 2), "load_seconds": load_seconds, "generate_seconds": generate_seconds, "transformer_peak_gpu_gib": round(transformer_peak, 2), "peak_host_rss_gib": round(peak_rss_gib(), 2), "token_counts": token_counts, "prompts_sha256": core.sha256_file(prompts_path), "generation_status": status, "precision": PRECISION, "steps": STEPS, "side": SIDE}
     del pipe, transformer, vae
     gc.collect()
     torch.cuda.empty_cache()

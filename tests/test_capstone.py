@@ -585,3 +585,21 @@ def test_split_manifest_columns_round_trip(tmp_path):
     assert len(rows) == len(records) and sum(r["selected"] for r in rows) == 224
     with open(tmp_path / "s.csv") as handle:
         assert next(csv.reader(handle)) == list(core.SPLIT_COLUMNS)
+
+
+def test_gpu_model_loads_stream_to_the_device():
+    """Colab T4 run of eb7f0d5 (2026-09-28): T5EncoderModel.from_pretrained(torch_dtype=float16) without device_map
+    converted the bfloat16 checkpoint in host RAM (~9.5 GB) and the 12.7 GiB VM killed the kernel. Every model load in
+    the GPU stages must pass device_map so weights are converted and moved one tensor at a time."""
+    import ast
+
+    for name in ("stage_flux.py", "stage_phi4.py"):
+        tree = ast.parse((CAPSTONE / name).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "from_pretrained":
+                owner = node.func.value.id if isinstance(node.func.value, ast.Name) else ""
+                if owner.endswith(("Tokenizer", "Processor", "Scheduler", "GenerationConfig")) or owner == "AutoProcessor":
+                    continue
+                keywords = {k.arg: k.value for k in node.keywords}
+                assert "device_map" in keywords, f"{name}:{node.lineno} {owner}.from_pretrained without device_map"
+                assert isinstance(keywords["device_map"], ast.Constant) and keywords["device_map"].value == "cuda", f"{name}:{node.lineno}"
