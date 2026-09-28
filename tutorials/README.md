@@ -40,3 +40,13 @@ the template and regenerate (`python tools/build_notebook.py`; `--check` is enfo
 ## AI Assistance Disclosure
 
 This repository’s code and accompanying documentation were developed with generative AI assistance for code development and technical writing under maintainer direction. The maintainer remains responsible for reviewing the implementation, validating results, and making release decisions. AI assistance does not constitute independent verification, provider endorsement, or release approval.
+
+## Scientific capstone notebooks
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kurtvalcorza/flux-schnell-generation-pipeline/blob/main/tutorials/DIMER_Bosch_Synthetic_Defect_Augmentation_Capstone.ipynb)
+
+| Notebook | Profile | Mode | Spec | Capability | Default runtime | Sample | BYOD | Run-all | Status |
+|---|---|---|---|---|---|---|---|---|---|
+| `DIMER_Bosch_Synthetic_Defect_Augmentation_Capstone.ipynb` | `E2E` | `GUIDED` | 2.2 | Controlled comparison on the Bosch SDI dataset (product A): Phi-4-multimodal describes training exemplars, bounded prompts drive FLUX.1 [schnell] to generate 32 scratch and 32 spot candidates, and a linear head on frozen ResNet-18 features is fitted in three matched arms (real-only, conventional augmentation, synthetic substitution) with three seeds; one frozen real-test comparison with a paired group bootstrap; safetensors export with fresh-process reload parity | Colab T4 (≥ 15 GB GPU), about 55 GB free disk; two locked environments created in the notebook | Bosch SDI archive (1.6 GB) fetched and digest-verified at run time, no credential | zip of images + `manifest.csv` (gated off by default), full experiment path | not yet recorded | candidate — see [`../docs/capstone-verification.md`](../docs/capstone-verification.md) |
+
+The capstone is standalone: `tools/build_capstone_notebook.py` embeds the stage scripts, the shared core (`tools/capstone/`) and both dependency locks as `%%writefile` and form cells, so a fresh runtime needs no clone. Do not edit the notebook by hand; edit `tools/capstone/` or the generator and regenerate (`--check` runs in CI). `tests/test_capstone.py` covers archive corruption and traversal, group leakage, insufficient classes, generation shortfall, non-finite inputs, manifest tampering, artifact reload failure, metrics, the bootstrap, the matched schedule and notebook/source parity. These are static and CPU checks, not execution evidence.

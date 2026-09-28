@@ -23,6 +23,8 @@ ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = "flux_schnell_generation_pipeline"
 REPO_NAME = "flux-schnell-generation-pipeline"
 NOTEBOOK_NAME = "flux_schnell_generation_colab.ipynb"
+CAPSTONE_NOTEBOOKS = ("DIMER_Bosch_Synthetic_Defect_Augmentation_Capstone.ipynb",)
+CAPSTONE_SECTION = "## Scientific capstone notebooks"
 EXPECTED_PROFILE = "E2E"
 EXPECTED_MODEL_ID = "black-forest-labs/FLUX.1-schnell"
 PIPELINE_CLASS = "FluxSchnellPipeline"
@@ -416,7 +418,8 @@ def validate_release_status() -> None:
     _check("## Release status" in readme, "README.md must have a '## Release status' section")
     section = readme.split("## Release status", 1)[1]
     _check(section.lstrip().startswith(f"**{token}"), f"README.md release status must open with **{token}**")
-    registry = _read(ROOT / "tutorials" / "README.md").replace("**", "")
+    # The capstone section carries its own status (candidate until its combined hosted run is recorded).
+    registry = _read(ROOT / "tutorials" / "README.md").split(CAPSTONE_SECTION, 1)[0].replace("**", "")
     _check(f"| {token}" in registry, f"tutorials/README.md must record the {token} status")
     other = [t for t in STATUS_TOKENS if t != token]
     for name, text in (("README.md", section.replace("**", "")), ("tutorials/README.md", registry)):
@@ -639,8 +642,10 @@ def _validate_notebook_content(
 
 def validate_notebooks() -> None:
     tutorials = ROOT / "tutorials"
-    notebooks = sorted(tutorials.glob("*.ipynb"))
-    _check(len(notebooks) == 1, f"exactly one tutorial notebook is expected, found {len(notebooks)}")
+    # Scientific capstone notebooks have their own generator, tests and verification record (tests/test_capstone.py,
+    # docs/capstone-verification.md); this validator governs the pipeline's primary tutorial only.
+    notebooks = sorted(p for p in tutorials.glob("*.ipynb") if p.name not in CAPSTONE_NOTEBOOKS)
+    _check(len(notebooks) == 1, f"exactly one primary tutorial notebook is expected, found {len(notebooks)}")
     path = notebooks[0]
     _check(path.name == NOTEBOOK_NAME, f"tutorial notebook must be named {NOTEBOOK_NAME}, found {path.name}")
     build = _load_tool("build_notebook")
