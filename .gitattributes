@@ -1,2 +1,5 @@
 # Snapshot files are digest-verified byte-for-byte against dimer-base-manifest.json; never convert their line endings.
 weights/** -text
+
+# Executed notebooks are kept byte-for-byte as recorded evidence (SHA-256 in docs/capstone-verification.md).
+docs/execution-evidence/** -text
