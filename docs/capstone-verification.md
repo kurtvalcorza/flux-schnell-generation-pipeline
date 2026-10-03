@@ -5,7 +5,7 @@
 ## Automatic coverage (every pull request)
 
 - `python tools/build_capstone_notebook.py --check`: the committed notebook equals the generator output from `tools/capstone/`.
-- `tests/test_capstone.py`: notebook JSON, metadata (profile, mode, spec, standalone), embedded scripts equal to their sources, both locks embedded and fully pinned, code cells compile, no placeholders, no persisted outputs, no clone / repository install / credential prompt / pickle load / `extractall` on the default path, form fields, collapsed infrastructure cells, guided-layer markers, citations resolving to references, pinned model revisions and the FLUX manifest digests; and the core's behaviour: archive traversal, absolute paths, symlinks, unsupported files and size ceilings refused; digest mismatch, LFS pointers and interrupted downloads handled; corrupt images recorded; group leakage detected; label-conflict duplicates excluded; insufficient classes and budgets refused; BYOD manifest rejections; bounded prompts and recorded fallbacks; candidate eligibility including non-finite pixels; generation shortfall; the matched slot schedule; undefined metrics; the stratified group bootstrap; frozen-record tampering; artifact digest, file-set, shape and format failures.
+- `tests/test_capstone.py`: notebook JSON, metadata (profile, mode, spec, standalone), embedded scripts equal to their sources, both locks embedded (as raw strings, byte-identical), fully pinned and SHA-256 hashed, nothing installed into the kernel (uv from a hash-pinned wheel, `--require-hashes --only-binary :all:`, every stage in a locked venv, kernel `PYTHON*` settings dropped), no cell line over 2,000 characters, code cells compile, no placeholders, no persisted outputs, no clone / repository install / credential prompt / pickle load / `extractall` on the default path, form fields, collapsed infrastructure cells, guided-layer markers, citations resolving to references, pinned model revisions and the FLUX manifest digests; and the core's behaviour: archive traversal, absolute paths, symlinks, unsupported files and size ceilings refused; digest mismatch, LFS pointers and interrupted downloads handled; corrupt images recorded; group leakage detected; label-conflict duplicates excluded; insufficient classes and budgets refused; BYOD manifest rejections; bounded prompts and recorded fallbacks; candidate eligibility including non-finite pixels; generation shortfall; the matched slot schedule; undefined metrics; the stratified group bootstrap; frozen-record tampering; artifact digest, file-set, shape and format failures.
 
 ## What CI cannot cover
 
@@ -39,6 +39,16 @@ A notebook review of `eb7f0d5` (verdict: needs revision) reported three major an
 User-visible changes: `new_image_rejections.json` is replaced by `new_image_inference` inside `reload_parity.json`; `caption_records.jsonl` carries `stop_reason`; the artifact manifest carries `reload_reference_sha256`; reload refuses artifacts whose metadata disagrees with the frozen experiment; the evaluate, export and reload scripts are saved in Section 8.
 
 Evidence boundary: the reviewer's probe scripts were re-run with expectations inverted, and the notebook's own cells were executed in an IPython kernel on the real Bosch archive and on a BYOD zip, both with stand-ins for the two GPU stages and a CPU backbone. None of this is a hosted run, and no Phi-4 or FLUX output was produced.
+
+## 2026-10-03 uv isolated environment
+
+Notebook blob `c64f21cc` (passed on Colab T4 at `9eae6c6`, recorded below) → `84061cc7`. Status: **Candidate**; a hosted re-run of the new blob is pending, and the run below does not cover it.
+
+- uv now comes from a pinned wheel (`uv 0.12.19`, size and SHA-256 checked) unpacked into `work/sdi_capstone/bin/`, instead of `pip install uv` into the kernel. Nothing is installed into the notebook kernel.
+- Both locks (`tools/capstone/locks/lab.lock`, `phi4.lock`) carry SHA-256 hashes from `uv pip compile --generate-hashes --only-binary :all:`, with the same 74 / 51 pins as before. They install with `--require-hashes --only-binary :all: --no-deps` into a uv-managed CPython 3.12.12, which replaces whatever Python 3.12 the host offered (3.12.3 on the recorded run).
+- `PYTHONPATH`, `PYTHONHOME` and `PYTHONSTARTUP` are dropped from the environment of uv and of every stage process.
+- The stage scripts and the shared core are unchanged byte for byte, so the default results are expected to match the 2026-09-29 run (for example, mean test macro-F1 for C − B +0.0443). Differences we expect: the environment build times, and the isolated interpreter's patch version.
+- User-visible: the notebook runs on Linux x86_64 only (Colab, Kaggle, Linux Jupyter), and it refuses other hosts with a message.
 
 ## Verification procedure
 
