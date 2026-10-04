@@ -5,6 +5,12 @@ exact notebook revision has executed top-to-bottom in a clean supported runtime.
 compilation, the generator parity checks and `tools/validate_release_assets.py` are necessary checks but are **not**
 runtime evidence under DIMER Notebook Specification 2.0 (REL8). This file is the durable release-gate record.
 
+> **2026-10-03 uv isolated environment (capstone only).** The Bosch capstone notebook's blob changed from `c64f21cc` to
+> `84061cc7`. It now gets uv from a pinned wheel instead of a kernel install, and it uses hash locks
+> (`--require-hashes --only-binary :all:`) with the same pins. It runs on Linux x86_64 only. A hosted re-run is pending,
+> and the status is **Candidate**. Details are in [`capstone-verification.md`](capstone-verification.md). This file's
+> notebook, `flux_schnell_generation_colab.ipynb`, did not change.
+
 ## Automatic coverage (static, every pull request)
 
 CI runs `tools/validate_release_assets.py`, which checks:
