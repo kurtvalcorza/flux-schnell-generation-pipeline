@@ -785,6 +785,23 @@ def check_split_disjoint(splits: Mapping[str, Sequence[Mapping[str, Any]]]) -> d
     return {name: len(records) for name, records in splits.items()}
 
 
+MIN_BYOD_IMAGES = 6  # the smallest dataset split_dataset accepts at its default fractions (see split_dataset)
+
+
+def duplicate_images(records: Sequence[Mapping[str, Any]]) -> list[dict[str, str]]:
+    """Records whose decoded pixels repeat an earlier record's: `[{"dropped": id, "kept": id}]`, in input order.
+    `split_dataset` keeps only the first record of each set of pixel-identical images; this names the others."""
+    seen: dict[str, str] = {}
+    out = []
+    for record in records:
+        key = image_digest(record["image"])
+        if key in seen:
+            out.append({"dropped": str(record["id"]), "kept": seen[key]})
+        else:
+            seen[key] = str(record["id"])
+    return out
+
+
 def split_dataset(
     records: Sequence[Mapping[str, Any]],
     *,
@@ -792,8 +809,12 @@ def split_dataset(
     test_fraction: float = 0.2,
     seed: int = 0,
 ) -> dict[str, list[dict[str, Any]]]:
-    """Seeded shuffle of a BYOD dataset into train/validation/test, grouped by caption, after de-duplicating
-    images. Every caption keeps at least one test record when it has three or more images."""
+    """Seeded split of a BYOD dataset into train/validation/test, STRATIFIED WITHIN EACH CAPTION, after dropping
+    pixel-identical duplicates (`duplicate_images` names them). A caption with three or more images gives
+    max(1, round(n * test_fraction)) test and round(n * val_fraction) validation records and keeps the rest for
+    training, so every held-out caption also appears in training; a caption with one or two images goes to training
+    only. At least MIN_TRAIN_RECORDS training records and one test record must remain, which at the default
+    fractions needs at least MIN_BYOD_IMAGES (6) distinct images in total, for example six images of one caption."""
     if not (0.0 <= val_fraction < 1.0 and 0.0 < test_fraction < 1.0 and val_fraction + test_fraction < 1.0):
         raise ValueError("fractions must satisfy 0 <= val < 1, 0 < test < 1, val + test < 1")
     checked = validate_dataset(records)["records"]
@@ -816,39 +837,118 @@ def split_dataset(
         splits["train"].extend(pool[n_test + n_val :])
     for part in splits.values():
         rng.shuffle(part)
-    if len(splits["train"]) < MIN_TRAIN_RECORDS:
-        raise ValueError(f"split leaves {len(splits['train'])} training records; at least {MIN_TRAIN_RECORDS} are required")
+    dropped = len(checked) - len(seen)
+    counts = f"{len(seen)} distinct images" + (f" after dropping {dropped} pixel-identical duplicate(s)" if dropped else "")
     if not splits["test"]:
-        raise ValueError("split leaves no test record; give at least one caption three or more images")
+        raise ValueError(
+            f"split leaves no test record ({counts}): give at least one caption three or more images; the smallest "
+            f"dataset that works is {MIN_BYOD_IMAGES} images, for example six images of one caption"
+        )
+    if len(splits["train"]) < MIN_TRAIN_RECORDS:
+        raise ValueError(
+            f"split leaves {len(splits['train'])} training records ({counts}; {len(splits['test'])} test and "
+            f"{len(splits['validation'])} validation records are held out within the captions that have three or more "
+            f"images); at least {MIN_TRAIN_RECORDS} are required: add images until at least {MIN_BYOD_IMAGES} distinct "
+            "images remain, for example six of one caption"
+        )
     return splits
+
+
+def _byod_member(name: str, members: Mapping[str, str], basenames: Mapping[str, list[str]]) -> str:
+    """Resolve a `file` value of captions.csv to one archive member: the exact path relative to the archive (or to
+    the folder holding captions.csv), else a unique file name. Absolute paths and `..` are refused."""
+    clean = name.replace(chr(92), "/").strip()
+    parts = [p for p in clean.split("/") if p not in ("", ".")]
+    if not parts or clean.startswith("/") or ".." in parts or ":" in parts[0]:
+        raise ValueError(f"captions.csv file {name!r}: give a path inside the zip (no absolute path, no '..')")
+    rel = "/".join(parts)
+    if rel in members:
+        return members[rel]
+    matches = basenames.get(parts[-1], [])
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        raise ValueError(
+            f"captions.csv file {name!r} is not in the zip; list each image by its path inside the zip or by its file name"
+        )
+    raise ValueError(
+        f"captions.csv file {name!r} matches {len(matches)} members {sorted(matches)[:3]}; give the path inside the zip"
+    )
+
+
+def _decode_byod_image(load: Any, name: str) -> Any:
+    from PIL import Image, UnidentifiedImageError
+
+    try:
+        image = load()
+        image.load()
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
+        raise ValueError(
+            f"{name}: not a readable JPEG or PNG image ({type(exc).__name__}); remove it from captions.csv or replace the file"
+        ) from exc
+    return image
 
 
 def load_byod_dataset(path: str | Path) -> list[dict[str, Any]]:
     """Read `{id, image, caption}` records from a directory or a zip holding `captions.csv` (columns `id`, `file`,
-    `caption`) beside the image files; images are decoded, never extracted to disk."""
+    `caption`) beside the image files; images are decoded, never extracted to disk. A `file` value is the image's
+    path inside the zip (relative to the archive root or to the folder holding captions.csv) or, when unique, its file
+    name. Every refusal names the file or the rule and how to fix it."""
     from PIL import Image
 
     source = Path(path)
     if source.is_dir():
-        table = (source / "captions.csv").read_text(encoding="utf-8")
-        loader = lambda name: Image.open(source / name)  # noqa: E731
-    elif source.is_file() and source.suffix.lower() == ".zip":
-        archive = zipfile.ZipFile(source)
-        members = {Path(n).name: n for n in archive.namelist()}
-        if "captions.csv" not in members:
-            raise ValueError("BYOD zip must contain captions.csv")
-        table = archive.read(members["captions.csv"]).decode("utf-8")
-        loader = lambda name: Image.open(io.BytesIO(archive.read(members[name])))  # noqa: E731
+        table_path = source / "captions.csv"
+        if not table_path.is_file():
+            raise ValueError(f"{source}: the folder must contain captions.csv (columns id, file, caption)")
+        table = table_path.read_bytes()
+        root = source.resolve()
+
+        def opener(name: str) -> Any:
+            target = (root / name.replace(chr(92), "/")).resolve()
+            if root not in target.parents or not target.is_file():
+                raise ValueError(f"captions.csv file {name!r}: not a file inside {source}")
+            return lambda: Image.open(target)
+
+    elif source.is_file():
+        try:
+            archive = zipfile.ZipFile(source)
+        except zipfile.BadZipFile as exc:
+            raise ValueError(
+                f"{source.name} is not a zip archive: give one .zip holding captions.csv and the image files"
+            ) from exc
+        names = [n for n in archive.namelist() if not n.endswith("/") and not n.startswith("__MACOSX/")]
+        tables = [n for n in names if Path(n).name == "captions.csv"]
+        if len(tables) != 1:
+            raise ValueError(f"{source.name} must contain exactly one captions.csv (found {len(tables)})")
+        table = archive.read(tables[0])
+        prefix = tables[0][: -len("captions.csv")]
+        members = {n: n for n in names}
+        members.update({n[len(prefix) :]: n for n in names if prefix and n.startswith(prefix)})
+        basenames: dict[str, list[str]] = {}
+        for n in names:
+            basenames.setdefault(Path(n).name, []).append(n)
+
+        def opener(name: str) -> Any:
+            member = _byod_member(name, members, basenames)
+            return lambda: Image.open(io.BytesIO(archive.read(member)))
+
     else:
-        raise ValueError("BYOD datasets must be a directory or a .zip holding captions.csv and the image files")
-    rows = list(csv.DictReader(io.StringIO(table)))
+        raise ValueError(f"{source}: BYOD datasets must be a directory or a .zip holding captions.csv and the image files")
+    try:
+        text = table.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise ValueError("captions.csv is not UTF-8 text: save it as 'CSV UTF-8'") from exc
+    rows = list(csv.DictReader(io.StringIO(text)))
     missing = {"id", "file", "caption"} - set(rows[0].keys() if rows else set())
     if missing:
-        raise ValueError(f"captions.csv is missing columns {sorted(missing)}")
+        raise ValueError(
+            f"captions.csv is missing columns {sorted(missing)} (or has no rows); the header must be id,file,caption"
+        )
     out = []
     for row in rows:
-        image = loader(row["file"])
-        image.load()
+        name = str(row["file"] or "")
+        image = _decode_byod_image(opener(name), name)
         out.append({"id": row["id"], "image": image.convert("RGB"), "caption": row["caption"]})
     return out
 

@@ -424,9 +424,10 @@ def build_transformer(weights_dir: Path, *, dtype: Any, use_lora: bool, device: 
     )
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
+        # device_map streams the bfloat16 shards to the GPU one tensor at a time (a Colab VM has 12.7 GiB of host RAM).
         model = FluxTransformer2DModel.from_pretrained(
-            str(weights_dir), subfolder="transformer", quantization_config=quant, torch_dtype=dtype
-        ).to(device)
+            str(weights_dir), subfolder="transformer", quantization_config=quant, torch_dtype=dtype, device_map=device
+        )
     n_params = count_parameters(model)
     if n_params != TRANSFORMER_PARAMETERS:
         raise ValueError(f"transformer has {n_params} parameters; expected {TRANSFORMER_PARAMETERS}")
@@ -536,7 +537,7 @@ class FluxSchnellPipeline:
         chosen = _select_device(device)
         dtype = _torch_dtype(compute_dtype)
         # The FLUX VAE declares `force_upcast`; it is small (168 MB) and kept in float32 throughout.
-        vae = AutoencoderKL.from_pretrained(str(root), subfolder="vae", torch_dtype=torch.float32).to(chosen).eval()
+        vae = AutoencoderKL.from_pretrained(str(root), subfolder="vae", torch_dtype=torch.float32, device_map=chosen).eval()
         for param in vae.parameters():
             param.requires_grad_(False)
         scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(str(root), subfolder="scheduler")
@@ -604,16 +605,15 @@ class FluxSchnellPipeline:
             )
         if self._text_encoder is None:
             started = time.perf_counter()
-            self._text_encoder = (
-                CLIPTextModel.from_pretrained(str(self.weights_dir), subfolder="text_encoder", torch_dtype=self.dtype)
-                .to(self.device)
-                .eval()
-            )
-            self._text_encoder_2 = (
-                T5EncoderModel.from_pretrained(str(self.weights_dir), subfolder="text_encoder_2", torch_dtype=self.dtype)
-                .to(self.device)
-                .eval()
-            )
+            # The checkpoints are bfloat16. Without device_map, from_pretrained converts the whole T5-XXL to the compute
+            # dtype in host RAM first (about 9.5 GB), which exhausts a 12.7 GiB Colab VM; device_map converts and moves
+            # one tensor at a time.
+            self._text_encoder = CLIPTextModel.from_pretrained(
+                str(self.weights_dir), subfolder="text_encoder", torch_dtype=self.dtype, device_map=self.device
+            ).eval()
+            self._text_encoder_2 = T5EncoderModel.from_pretrained(
+                str(self.weights_dir), subfolder="text_encoder_2", torch_dtype=self.dtype, device_map=self.device
+            ).eval()
             load_seconds = round(time.perf_counter() - started, 1)
         else:
             load_seconds = 0.0
@@ -877,6 +877,11 @@ class FluxSchnellPipeline:
         float16). Epoch 0 records the frozen model; the epoch with the lowest validation loss is kept."""
         if not self.use_lora:
             raise ValueError("adapt() needs a pipeline built with use_lora=True")
+        if self.adapter is not None:
+            raise ValueError(
+                "this pipeline already carries a trained adapter, and adapt() would continue from it and record the adapted "
+                "model as epoch 0; call release_transformer() first so the next load starts from the pretrained base"
+            )
         if not isinstance(epochs, int) or not 1 <= epochs <= 50:
             raise ValueError("epochs must be an int in 1..50")
         if not (0.0 < lr <= 1e-2):
