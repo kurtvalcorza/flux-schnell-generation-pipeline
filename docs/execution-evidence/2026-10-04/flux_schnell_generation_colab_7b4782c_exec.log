@@ -1,0 +1,213 @@
+[colab] Parsing notebook '/home/kurt/colab-runs/flux-schnell-generation-pipeline-7b4782c-828ecd/flux_schnell_generation_colab_7b4782c_colab-cli-t4.ipynb'...
+[colab] Executing cell 1/14 - Infrastructure: install the locked runtime into an isolated environment...
+{'isolated_environment': '/content/dimer_isolated_env', 'isolated_python': '3.12.12', 'kernel_python': '3.13.15', 'locked_packages': 69, 'setup_seconds': 60}
+[colab] Executing cell 2/14 - Infrastructure: route the remaining cells to the isolated environment...
+Every later code cell now runs in /content/dimer_isolated_env/bin/python (pid 4347).
+[colab] Executing cell 3/14 - Infrastructure: record the runtime...
+/content/dimer_isolated_env/lib/python3.12/site-packages/torchao/quantization/quant_api.py:1558: SyntaxWarning: invalid escape sequence '\.'
+  * regex for parameter names, must start with `re:`, e.g. `re:language\.layers\..+\.q_proj.weight`.
+W1004 11:56:18.103000 4347 torch/utils/_pytree.py:630] <enum 'KernelPreference'> is an Enum subclass and is now natively supported by torch.compile as an opaque value type. Calling register_constant() on Enum subclasses is deprecated and will be an error in a future release.
+W1004 11:56:18.220000 4347 torch/utils/_pytree.py:630] <enum 'ScaleCalculationMode'> is an Enum subclass and is now natively supported by torch.compile as an opaque value type. Calling register_constant() on Enum subclasses is deprecated and will be an error in a future release.
+{'notebook_source': {'repository': 'flux-schnell-generation-pipeline', 'repository_revision': '10a8ed527bd7fad90fa20a7ba7ad031a9f437746', 'embedded_module': 'src/flux_schnell_generation_pipeline/pipeline.py', 'embedded_modules': ['src/flux_schnell_generation_pipeline/pipeline.py', 'src/flux_schnell_generation_pipeline/metrics.py', 'src/flux_schnell_generation_pipeline/samples.py'], 'module_sha256': 'aec9968593a581c91a335e73236ba24eb9a0de78c264bbf622102df523cb0edc', 'module_sha256_per_file': {'src/flux_schnell_generation_pipeline/pipeline.py': '93a6fc5324522895692c4967a0c8ac1ad373e6375a4b1fa6ea65dc594c0984ff', 'src/flux_schnell_generation_pipeline/metrics.py': '7a133f49ab09cd8fe7a88b74f93baef1b277878b3281e7853819ab5e88bfb7b0', 'src/flux_schnell_generation_pipeline/samples.py': '498f017aa16edaedafb6f0bad81cec0551267ac2c4e8336f72fe1a991f2be303'}, 'generator': 'build_notebook.py/2.1', 'notebook_spec': '2.2'}, 'python': '3.12.12', 'torch': '2.14.0+cu130', 'diffusers': '0.40.0', 'transformers': '5.17.0', 'peft': '0.21.0', 'bitsandbytes': '0.50.2', 'cuda': True}
+[colab] Executing cell 4/14 - Infrastructure: carried module `src/flux_schnell_generation_pipeline/pipeline.py` (you may run it without reading it)...
+[colab] Executing cell 5/14 - Infrastructure: carried module `src/flux_schnell_generation_pipeline/metrics.py` (you may run it without reading it)...
+[colab] Executing cell 6/14 - Infrastructure: carried module `src/flux_schnell_generation_pipeline/samples.py` (you may run it without reading it)...
+[colab] Executing cell 7/14 - Infrastructure: pin, stage and verify the model (you may run it without reading it)...
+{'model_id': 'black-forest-labs/FLUX.1-schnell', 'revision': '741f7c3ce8b383c54771c7003378a50191e9efe9', 'license': 'apache-2.0', 'files': 23, 'total_bytes': 33725923002}
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+{'weights_dir': '/content/weights/flux1-schnell', 'fetched': ['model_index.json', 'scheduler/scheduler_config.json', 'text_encoder/config.json', 'text_encoder/model.safetensors', 'text_encoder_2/config.json', 'text_encoder_2/model-00001-of-00002.safetensors', 'text_encoder_2/model-00002-of-00002.safetensors', 'text_encoder_2/model.safetensors.index.json', 'tokenizer/merges.txt', 'tokenizer/special_tokens_map.json', 'tokenizer/tokenizer_config.json', 'tokenizer/vocab.json', 'tokenizer_2/special_tokens_map.json', 'tokenizer_2/spiece.model', 'tokenizer_2/tokenizer.json', 'tokenizer_2/tokenizer_config.json', 'transformer/config.json', 'transformer/diffusion_pytorch_model-00001-of-00003.safetensors', 'transformer/diffusion_pytorch_model-00002-of-00003.safetensors', 'transformer/diffusion_pytorch_model-00003-of-00003.safetensors', 'transformer/diffusion_pytorch_model.safetensors.index.json', 'vae/config.json', 'vae/diffusion_pytorch_model.safetensors']}
+{'verified_files': 23, 'revision': '741f7c3ce8b383c54771c7003378a50191e9efe9'}
+{'weights_dir': '/content/weights/clip-vit-b-32-laion2b', 'fetched': ['README.md', 'config.json', 'merges.txt', 'model.safetensors', 'preprocessor_config.json', 'special_tokens_map.json', 'tokenizer.json', 'tokenizer_config.json', 'vocab.json']}
+{'verified_files_clip_vit_b_32_laion2b': 9}
+Unable to import `torchao` Tensor objects. This may affect loading checkpoints serialized with `torchao`
+{'device': 'cuda', 'source': 'local-snapshot (manifest verified; safetensors only; staged from unsloth/FLUX.1-schnell)'}
+[colab] Executing cell 8/14 - flux_schnell_generation-17...
+{'data_source': "iNaturalist CC0 bird photographs (six species, 10 each); iNaturalist open-data bucket, research-grade CC0 photos selected 2026-09-19 (fleet DINOv2/ViT corpus subset); CC0 1.0 (each photo's own license_code on iNaturalist; observers credited in the records)", 'splits': {'train': 36, 'validation': 12, 'test': 12}, 'captions': 6, 'disjoint': {'train': 36, 'validation': 12, 'test': 12}}
+{'shorter_side': {'min': 298, 'max': 500}, 'centre_cropped': 31, 'digest': '9ca31704e68277d8...'}
+{'first_test_record': {'id': 'test-000', 'size': (500, 383), 'resized_to': (668, 512), 'centre_crop': (512, 512), 'caption_chars': 80}, 'caption': 'a photo of a Song Sparrow (Melospiza melodia), a wild bird photographed outdoors'}
+{'prompts': ['a photo of a Chipping Sparrow (Spizella passerina), a wild bird photographed outdoors', 'a photo of a Song Sparrow (Melospiza melodia), a wild bird photographed outdoors', 'a photo of a American Goldfinch (Spinus tristis), a wild bird photographed outdoors', 'a photo of a Dark-eyed Junco (Junco hyemalis), a wild bird photographed outdoors', 'a photo of a White-throated Sparrow (Zonotrichia albicollis), a wild bird photographed outdoors', 'a photo of a House Finch (Haemorhous mexicanus), a wild bird photographed outdoors']}
+{'captions_csv': 'outputs/flux_schnell_generation_sample_captions.csv'}
+{'validation': 'record shape, image decodability and side limits, caption length and duplicate ids only. Nothing checks that a caption describes its image, that the images are photographs, or that the prompt is one the model can render -- any RGB image with any string is accepted'}
+{'probe': 'missing caption', 'rejected': "records[0] is missing 'caption'"}
+{'probe': 'image too small', 'rejected': 'records[0]: image sides must be within 256..4096 px, got (200, 200)'}
+{'probe': 'duplicate id', 'rejected': "duplicate id 'train-000'"}
+[colab] Executing cell 9/14 - flux_schnell_generation-19...
+
+Loading weights:   0%|          | 0/196 [00:00<?, ?it/s]
+Loading weights:   1%|          | 2/196 [00:00<00:46,  4.17it/s]
+Loading weights:  53%|█████▎    | 104/196 [00:00<00:00, 231.00it/s]
+Loading weights:  81%|████████  | 158/196 [00:00<00:00, 257.63it/s]
+Loading weights: 100%|██████████| 196/196 [00:00<00:00, 220.18it/s]
+
+Loading weights:   0%|          | 0/219 [00:00<?, ?it/s]
+Loading weights:   0%|          | 1/219 [00:00<00:47,  4.63it/s]
+Loading weights:   1%|▏         | 3/219 [00:00<00:28,  7.53it/s]
+Loading weights:   3%|▎         | 7/219 [00:01<00:33,  6.29it/s]
+Loading weights:   4%|▍         | 9/219 [00:01<00:44,  4.67it/s]
+Loading weights:   6%|▌         | 13/219 [00:01<00:26,  7.76it/s]
+Loading weights:   7%|▋         | 16/219 [00:02<00:33,  6.14it/s]
+Loading weights:   8%|▊         | 18/219 [00:03<00:41,  4.84it/s]
+Loading weights:  10%|█         | 22/219 [00:03<00:27,  7.15it/s]
+Loading weights:  11%|█▏        | 25/219 [00:04<00:32,  5.98it/s]
+Loading weights:  12%|█▏        | 27/219 [00:04<00:39,  4.86it/s]
+Loading weights:  14%|█▍        | 31/219 [00:04<00:26,  7.10it/s]
+Loading weights:  16%|█▌        | 34/219 [00:05<00:30,  6.00it/s]
+Loading weights:  16%|█▋        | 36/219 [00:06<00:37,  4.88it/s]
+Loading weights:  18%|█▊        | 40/219 [00:06<00:25,  7.01it/s]
+Loading weights:  20%|█▉        | 43/219 [00:07<00:29,  5.97it/s]
+Loading weights:  21%|██        | 45/219 [00:07<00:35,  4.87it/s]
+Loading weights:  22%|██▏       | 49/219 [00:08<00:24,  6.96it/s]
+Loading weights:  24%|██▎       | 52/219 [00:08<00:31,  5.35it/s]
+Loading weights:  25%|██▍       | 54/219 [00:09<00:39,  4.17it/s]
+Loading weights:  26%|██▋       | 58/219 [00:09<00:26,  6.16it/s]
+Loading weights:  27%|██▋       | 60/219 [00:10<00:22,  6.96it/s]
+Loading weights:  28%|██▊       | 62/219 [00:10<00:28,  5.44it/s]
+Loading weights:  29%|██▉       | 64/219 [00:11<00:31,  4.85it/s]
+Loading weights:  31%|███       | 67/219 [00:11<00:24,  6.22it/s]
+Loading weights:  32%|███▏      | 70/219 [00:12<00:27,  5.45it/s]
+Loading weights:  33%|███▎      | 72/219 [00:12<00:32,  4.57it/s]
+Loading weights:  35%|███▍      | 76/219 [00:12<00:20,  7.08it/s]
+Loading weights:  36%|███▌      | 78/219 [00:13<00:17,  7.98it/s]
+Loading weights:  37%|███▋      | 80/219 [00:13<00:24,  5.66it/s]
+Loading weights:  37%|███▋      | 82/219 [00:14<00:27,  4.94it/s]
+Loading weights:  39%|███▉      | 85/219 [00:14<00:21,  6.30it/s]
+Loading weights:  40%|████      | 88/219 [00:15<00:23,  5.50it/s]
+Loading weights:  41%|████      | 90/219 [00:15<00:28,  4.58it/s]
+Loading weights:  43%|████▎     | 94/219 [00:16<00:17,  7.10it/s]
+Loading weights:  44%|████▍     | 96/219 [00:16<00:15,  8.01it/s]
+Loading weights:  45%|████▍     | 98/219 [00:16<00:21,  5.67it/s]
+Loading weights:  46%|████▌     | 100/219 [00:17<00:24,  4.93it/s]
+Loading weights:  47%|████▋     | 103/219 [00:17<00:18,  6.31it/s]
+Loading weights:  48%|████▊     | 106/219 [00:18<00:20,  5.50it/s]
+Loading weights:  49%|████▉     | 108/219 [00:18<00:24,  4.57it/s]
+Loading weights:  51%|█████     | 112/219 [00:19<00:15,  7.12it/s]
+Loading weights:  52%|█████▏    | 114/219 [00:19<00:13,  8.01it/s]
+Loading weights:  53%|█████▎    | 116/219 [00:19<00:18,  5.64it/s]
+Loading weights:  54%|█████▍    | 118/219 [00:20<00:20,  4.87it/s]
+Loading weights:  55%|█████▌    | 121/219 [00:20<00:16,  5.87it/s]
+Loading weights:  57%|█████▋    | 124/219 [00:21<00:19,  4.78it/s]
+Loading weights:  58%|█████▊    | 126/219 [00:22<00:24,  3.80it/s]
+Loading weights:  60%|█████▉    | 131/219 [00:22<00:14,  5.98it/s]
+Loading weights:  61%|██████    | 133/219 [00:23<00:15,  5.64it/s]
+Loading weights:  61%|██████    | 134/219 [00:23<00:15,  5.67it/s]
+Loading weights:  62%|██████▏   | 135/219 [00:23<00:19,  4.36it/s]
+Loading weights:  63%|██████▎   | 139/219 [00:24<00:12,  6.64it/s]
+Loading weights:  65%|██████▍   | 142/219 [00:24<00:13,  5.63it/s]
+Loading weights:  66%|██████▌   | 144/219 [00:25<00:16,  4.66it/s]
+Loading weights:  68%|██████▊   | 148/219 [00:25<00:09,  7.20it/s]
+Loading weights:  68%|██████▊   | 150/219 [00:25<00:08,  8.14it/s]
+Loading weights:  69%|██████▉   | 152/219 [00:26<00:11,  5.74it/s]
+Loading weights:  70%|███████   | 154/219 [00:27<00:13,  4.93it/s]
+Loading weights:  72%|███████▏  | 157/219 [00:27<00:09,  6.33it/s]
+Loading weights:  73%|███████▎  | 160/219 [00:27<00:10,  5.51it/s]
+Loading weights:  74%|███████▍  | 162/219 [00:28<00:12,  4.58it/s]
+Loading weights:  76%|███████▌  | 166/219 [00:28<00:07,  7.11it/s]
+Loading weights:  77%|███████▋  | 168/219 [00:28<00:06,  8.03it/s]
+Loading weights:  78%|███████▊  | 170/219 [00:29<00:08,  5.68it/s]
+Loading weights:  79%|███████▊  | 172/219 [00:30<00:09,  4.92it/s]
+Loading weights:  80%|███████▉  | 175/219 [00:30<00:06,  6.29it/s]
+Loading weights:  81%|████████▏ | 178/219 [00:31<00:07,  5.50it/s]
+Loading weights:  82%|████████▏ | 180/219 [00:31<00:08,  4.56it/s]
+Loading weights:  84%|████████▍ | 184/219 [00:31<00:04,  7.16it/s]
+Loading weights:  85%|████████▍ | 186/219 [00:31<00:04,  7.97it/s]
+Loading weights:  86%|████████▌ | 188/219 [00:32<00:05,  5.65it/s]
+Loading weights:  87%|████████▋ | 190/219 [00:33<00:06,  4.66it/s]
+Loading weights:  88%|████████▊ | 193/219 [00:33<00:04,  5.67it/s]
+Loading weights:  89%|████████▉ | 196/219 [00:34<00:04,  4.70it/s]
+Loading weights:  90%|█████████ | 198/219 [00:35<00:05,  3.88it/s]
+Loading weights:  92%|█████████▏| 202/219 [00:35<00:02,  6.13it/s]
+Loading weights:  93%|█████████▎| 204/219 [00:35<00:02,  7.13it/s]
+Loading weights:  94%|█████████▍| 206/219 [00:36<00:02,  5.46it/s]
+Loading weights:  95%|█████████▍| 208/219 [00:36<00:02,  4.85it/s]
+Loading weights:  96%|█████████▋| 211/219 [00:36<00:01,  6.20it/s]
+Loading weights:  98%|█████████▊| 214/219 [00:37<00:00,  5.45it/s]
+Loading weights:  99%|█████████▊| 216/219 [00:38<00:00,  4.47it/s]
+Loading weights: 100%|██████████| 219/219 [00:38<00:00,  4.34it/s]
+Loading weights: 100%|██████████| 219/219 [00:38<00:00,  5.62it/s]
+{'encoded': 7, 'cached': 7, 'encoder_dtype': 'float16', 'load_seconds': 40.3, 'encode_seconds': 3.6, 'truncated': [], 'gpu_memory_gb_with_encoders': 12.14}
+{'embeddings_finite': True, 'embeds_shape': (256, 4096), 'pooled_shape': (768,)}
+{'text_encoders_released': True, 'gpu_memory_gb_after_release': 0.34, 'device': 'cuda', 'compute_dtype': 'float16'}
+[colab] Executing cell 10/14 - flux_schnell_generation-21...
+
+Loading checkpoint shards:   0%|          | 0/3 [00:00<?, ?it/s]
+Loading checkpoint shards:  33%|███▎      | 1/3 [00:41<01:23, 41.68s/it]
+Loading checkpoint shards:  67%|██████▋   | 2/3 [01:23<00:41, 41.61s/it]
+Loading checkpoint shards: 100%|██████████| 3/3 [01:39<00:00, 30.15s/it]
+Loading checkpoint shards: 100%|██████████| 3/3 [01:39<00:00, 33.25s/it]
+{'loaded': True, 'released_text_encoders': False, 'load_seconds': 102.6, 'quantization': 'nf4', 'parameters': 11900517440, 'lora_tensors': 380, 'gpu_memory_gb': 6.52}
+
+Loading weights:   0%|          | 0/398 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 398/398 [00:00<00:00, 4825.71it/s]
+{'frozen_flow_matching_mse': {'validation': 0.834244, 'test': 0.7953}, 'by_sigma_test': {'0.1': 1.072608, '0.3': 0.954901, '0.5': 0.749795, '0.7': 0.592937, '0.9': 0.606259}, 'seconds': 186.1}
+{'generated': 6, 'steps': 4, 'guidance_scale': 0.0, 'precision': 'nf4 weights, float16 compute', 'seconds': 39.04, 'adapted': False}
+{'frozen_generations': {'clip_prompt_similarity': 31.078, 'label_accuracy': 0.6667, 'reference_similarity': 71.947}}
+{'real_photo_reference_leave_one_out': {'clip_prompt_similarity': 30.25, 'label_accuracy': 0.9167, 'reference_similarity': 57.722}, 'photos_without_a_reference': 0}
+{'prompt': 'a photo of a Chipping Sparrow (Spizella pa', 'clip': 30.875, 'nearest': 'Chipping Sparrow (Spizella ', 'correct': True, 'reference_similarity': 70.243}
+{'prompt': 'a photo of a Song Sparrow (Melospiza melod', 'clip': 28.483, 'nearest': 'Chipping Sparrow (Spizella ', 'correct': False, 'reference_similarity': 80.178}
+{'prompt': 'a photo of a American Goldfinch (Spinus tr', 'clip': 36.002, 'nearest': 'American Goldfinch (Spinus ', 'correct': True, 'reference_similarity': 79.894}
+{'prompt': 'a photo of a Dark-eyed Junco (Junco hyemal', 'clip': 33.994, 'nearest': 'Dark-eyed Junco (Junco hyem', 'correct': True, 'reference_similarity': 69.159}
+{'prompt': 'a photo of a White-throated Sparrow (Zonot', 'clip': 25.75, 'nearest': 'Chipping Sparrow (Spizella ', 'correct': False, 'reference_similarity': 71.602}
+{'prompt': 'a photo of a House Finch (Haemorhous mexic', 'clip': 31.366, 'nearest': 'House Finch (Haemorhous mex', 'correct': True, 'reference_similarity': 60.607}
+{'grid': 'outputs/flux_schnell_generation_frozen_grid.jpg', 'columns': 'generation prompts in the order printed above', 'gpu_memory_gb': 7.13}
+<PIL.JpegImagePlugin.JpegImageFile image mode=RGB size=1536x256 at 
+0x786179BC0050>
+
+[Image saved to: /tmp/tmpl730d8kl.png]
+[colab] Executing cell 11/14 - flux_schnell_generation-23...
+{'epoch': 0, 'train_loss': None, 'val_flow_matching_mse': 0.834244, 'note': 'frozen model (LoRA at initialisation: B = 0)'}
+{'epoch': 1, 'train_loss': 0.6218, 'val_flow_matching_mse': 0.591159}
+{'epoch': 2, 'train_loss': 0.665, 'val_flow_matching_mse': 0.532501}
+{'epoch': 3, 'train_loss': 0.5674, 'val_flow_matching_mse': 0.523245}
+{'trainable_parameters': 9338880, 'total_parameters': 11900517440, 'steps': 108, 'best_epoch': 3, 'precision': 'nf4 base, float16 autocast + GradScaler, float32 LoRA masters', 'seconds': 938.3, 'peak_gpu_memory_gb': 12.22}
+[colab] Executing cell 12/14 - flux_schnell_generation-25...
+{'flow_matching_mse_validation': {'frozen': 0.834244, 'adapted': 0.523245}}
+{'flow_matching_mse_test': {'frozen': 0.7953, 'adapted': 0.506467}}
+{'flow_matching_mse_test_by_sigma': {'0.1': {'frozen': 1.072608, 'adapted': 0.724203}, '0.3': {'frozen': 0.954901, 'adapted': 0.63562}, '0.5': {'frozen': 0.749795, 'adapted': 0.479433}, '0.7': {'frozen': 0.592937, 'adapted': 0.350759}, '0.9': {'frozen': 0.606259, 'adapted': 0.34232}}}
+{'clip_prompt_similarity': {'frozen': 31.078, 'adapted': 30.347, 'real_photo_reference': 30.25}}
+{'label_accuracy': {'frozen': 0.6667, 'adapted': 0.6667, 'real_photo_reference': 0.9167}}
+{'reference_similarity': {'frozen': 71.947, 'adapted': 71.888, 'real_photo_reference': 57.722}}
+{'real_photo_reference': 'leave-one-out real-photo reference', 'reading': {'clip_prompt_similarity': 'not an upper bound: a generator conditioned on the prompt can match it more closely than a photograph does', 'label_accuracy': 'a reference: real photographs of these species are what the captions describe', 'reference_similarity': 'not an upper bound: each real photo is compared with the other held-out photos of its caption (itself excluded), the generations with all of them, so the two are not on identical terms'}}
+{'prompt': 'a photo of a Chipping Sparrow (Spizella pa', 'reference_similarity': {'frozen': 70.243, 'adapted': 67.309}, 'correct': {'frozen': True, 'adapted': True}}
+{'prompt': 'a photo of a Song Sparrow (Melospiza melod', 'reference_similarity': {'frozen': 80.178, 'adapted': 81.6}, 'correct': {'frozen': False, 'adapted': False}}
+{'prompt': 'a photo of a American Goldfinch (Spinus tr', 'reference_similarity': {'frozen': 79.894, 'adapted': 79.081}, 'correct': {'frozen': True, 'adapted': True}}
+{'prompt': 'a photo of a Dark-eyed Junco (Junco hyemal', 'reference_similarity': {'frozen': 69.159, 'adapted': 67.141}, 'correct': {'frozen': True, 'adapted': True}}
+{'prompt': 'a photo of a White-throated Sparrow (Zonot', 'reference_similarity': {'frozen': 71.602, 'adapted': 72.96}, 'correct': {'frozen': False, 'adapted': False}}
+{'prompt': 'a photo of a House Finch (Haemorhous mexic', 'reference_similarity': {'frozen': 60.607, 'adapted': 63.236}, 'correct': {'frozen': True, 'adapted': True}}
+{'grid': 'outputs/flux_schnell_generation_adapted_grid.jpg', 'side_by_side': 'outputs/flux_schnell_generation_frozen_vs_adapted.jpg', 'rows': 'top: frozen, bottom: adapted; same prompt and seed in each column'}
+<PIL.JpegImagePlugin.JpegImageFile image mode=RGB size=1536x512 at 
+0x7861500A8A40>
+
+[Image saved to: /tmp/tmpvb61n3t4.png]
+{'test_flow_matching_mse_change': -0.288833, 'note': 'held-out observation, not asserted'}
+{'report': 'outputs/flux_schnell_generation_evaluation_report.json'}
+[colab] Executing cell 13/14 - flux_schnell_generation-27...
+{'new_prompt': 'a photo of a House Finch (Haemorhous mexicanus) perched on a snow-covered branch in winter', 'clip_prompt_similarity': 33.106, 'seconds': 13.18, 'note': 'sanity check, not an evaluation'}
+<PIL.JpegImagePlugin.JpegImageFile image mode=RGB size=512x256 at 
+0x786143FB5460>
+
+[Image saved to: /tmp/tmpmg5e1r2o.png]
+{'artifact': 'outputs/flux_schnell_generation_adapter', 'format': 'org.valcorza.flux-schnell-generation.adapter.v1', 'tensors': 380, 'bytes': 37404064, 'sha256': '738a9797daa0e6ff...', 'quantization': 'nf4'}
+{'adapted_transformer_released': True, 'gpu_memory_gb': 0.96}
+
+Loading checkpoint shards:   0%|          | 0/3 [00:00<?, ?it/s]
+Loading checkpoint shards:  33%|███▎      | 1/3 [00:42<01:25, 42.52s/it]
+Loading checkpoint shards:  67%|██████▋   | 2/3 [01:24<00:42, 42.16s/it]
+Loading checkpoint shards: 100%|██████████| 3/3 [01:41<00:00, 30.57s/it]
+Loading checkpoint shards: 100%|██████████| 3/3 [01:41<00:00, 33.74s/it]
+{'reload_parity': {'flow_matching_mse_diff': 0.0, 'mean_abs_pixel_diff': 0.0}, 'reloaded_best_epoch': 3, 'gpu_memory_gb_with_reloaded': 7.47}
+{'reloaded_pipeline_released': True, 'gpu_memory_gb': 0.96}
+outputs/:
+  - outputs/flux_schnell_generation_adapted_grid.jpg (41.9 KB)
+  - outputs/flux_schnell_generation_adapter/adapter.safetensors (36527.4 KB)
+  - outputs/flux_schnell_generation_adapter/manifest.json (26.3 KB)
+  - outputs/flux_schnell_generation_evaluation_report.json (19.1 KB)
+  - outputs/flux_schnell_generation_frozen_grid.jpg (43.9 KB)
+  - outputs/flux_schnell_generation_frozen_vs_adapted.jpg (85.2 KB)
+  - outputs/flux_schnell_generation_new_prompt_0.png (280.1 KB)
+  - outputs/flux_schnell_generation_new_prompt_1.png (288.4 KB)
+  - outputs/flux_schnell_generation_new_prompt_grid.jpg (12.1 KB)
+  - outputs/flux_schnell_generation_result.json (5.3 KB)
+  - outputs/flux_schnell_generation_sample_captions.csv (2.3 KB)
+[colab] Executing cell 14/14 - flux_schnell_generation-29...
+Activity not run: set RUN_ACTIVITY = True and run this cell. It writes only under outputs/activity/ and changes no earlier result.
+[colab] Saving notebook with outputs to '/home/kurt/colab-runs/flux-schnell-generation-pipeline-7b4782c-828ecd/flux_schnell_generation_colab_7b4782c_colab-cli-t4_output.ipynb'...
