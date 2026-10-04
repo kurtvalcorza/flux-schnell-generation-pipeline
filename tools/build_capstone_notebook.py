@@ -21,11 +21,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "tools" / "capstone"
 NOTEBOOK = ROOT / "tutorials" / "DIMER_Bosch_Synthetic_Defect_Augmentation_Capstone.ipynb"
-GENERATOR = "tools/build_capstone_notebook.py/1"
+GENERATOR = "tools/build_capstone_notebook.py/2"
 WORK_REL = "work/sdi_capstone"
 REPO = "kurtvalcorza/flux-schnell-generation-pipeline"
 COLAB = f"https://colab.research.google.com/github/{REPO}/blob/main/tutorials/{NOTEBOOK.name}"
 SCRIPTS = ("stage_data.py", "stage_features.py", "stage_fit.py", "stage_phi4.py", "stage_prompts.py", "stage_flux.py", "stage_evaluate.py", "stage_export.py", "stage_reload.py")
+REVISIONS = [
+    {
+        "date": "2026-10-03",
+        "change": "uv isolated environment",
+        "summary": "uv comes from a size- and SHA-256-pinned wheel instead of a kernel pip install; both locks carry SHA-256 hashes "
+        "(same 74/51 pins) and install with --require-hashes --only-binary :all: --no-deps into uv-managed CPython 3.12.12; "
+        "PYTHONPATH/PYTHONHOME/PYTHONSTARTUP are dropped from child processes. Linux x86_64 only. Stage code unchanged.",
+        "previous_blob": "c64f21cc081d68aae0955167d2dfb432e5f45866",
+    },
+]
 SECTION_MARK = re.compile(r"^# %% \[section\] (.+)$", re.M)
 
 
@@ -100,7 +110,7 @@ AUDIENCE = """
 
 **Who this is for.** You can open a Colab notebook, run cells, and read basic Python. You have met image classification before. Class imbalance, augmentation, held-out evaluation and macro-F1 are introduced here. The dataset is an international manufacturing dataset; any local relevance is by analogy, not because it contains Philippine observations.
 
-**Runtime.** A Colab **T4 GPU** runtime (Runtime → Change runtime type → T4 GPU) with at least 15 GB of GPU memory. The runtime check in Section 1 stops with an instruction if no suitable GPU is attached.
+**Runtime.** A Colab **T4 GPU** runtime (Runtime → Change runtime type → T4 GPU) with at least 15 GB of GPU memory, on Linux x86_64 (Colab, Kaggle or Linux Jupyter; the isolated environments use Linux wheels). The runtime check in Section 1 stops with an instruction if no suitable GPU is attached.
 
 **Resource budget (estimates, not measurements).** About 53 GB of downloads (dataset 1.6 GB, Phi-4 11.2 GB, FLUX 33.7 GB, ResNet-18 0.05 GB, Python wheels about 6 GB) and about 55 GB of free disk with the default of deleting each model's weights after use. Model time is expected to be well under 90 minutes on a T4, excluding downloads. The notebook measures and records the actual download bytes, stage times, peak host memory and peak GPU memory; a later hosted run replaces these estimates.
 
@@ -293,30 +303,43 @@ def locks_cell() -> str:
     phi4 = (SRC / "locks" / "phi4.lock").read_text(encoding="utf-8").strip()
     return f'''
 # @title Infrastructure: exact dependency locks (every transitive package pinned)
-# Resolved with `uv pip compile` for CPython 3.12 on x86_64 manylinux from tools/capstone/locks/*.in.
+# Resolved with `uv pip compile --generate-hashes --only-binary :all:` for CPython 3.12 on x86_64 manylinux from
+# tools/capstone/locks/*.in: every package is pinned and every distribution's SHA-256 is listed.
 # The lab lock takes torch/torchvision from the CUDA 12.6 wheel index (these run on any CUDA 12.x or newer driver).
 LOCKS = {{
-    'lab': """
+    'lab': r"""
 {lab}
 """,
-    'phi4': """
+    'phi4': r"""
 {phi4}
 """,
 }}
 for _name, _text in LOCKS.items():
     (WORK_ROOT / 'locks' / f'{{_name}}.lock').write_text(_text.strip() + '\\n')
-print({{name: len(text.split()) for name, text in LOCKS.items()}}, 'pinned packages')
+print({{name: sum('==' in line for line in text.splitlines()) for name, text in LOCKS.items()}}, 'pinned packages')
 '''
 
 
 INSTALL = '''
 # @title Infrastructure: create the two locked environments (about 5-8 minutes on first run)
+# Nothing is installed into this notebook's kernel, so Run all needs no restart. A pinned uv binary (checked by size
+# and SHA-256) builds a uv-managed CPython 3.12.12 per environment and installs wheels only, each checked against the
+# lock's SHA-256 (--require-hashes --only-binary :all:). Linux x86_64 only (Colab, Kaggle, Linux Jupyter).
 import hashlib
-import sys
-import sysconfig
+import io
+import os
+import urllib.request
+import zipfile
 
 UV_VERSION = '0.12.19'
-PYTHON_REQUEST = '3.12'
+UV_URL = ('https://files.pythonhosted.org/packages/76/71/b47cec536d8ee7b09017c1d9db211dfc2e7ce5c87d0482918d8b3411ec48/'
+          'uv-0.12.19-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl')
+UV_SHA256 = 'a63d18a0aa38ee9f21a5406afbbaeb41303bcd954be9d6b7c1b95ac275e53958'
+UV_WHEEL_BYTES = 20478749
+PYTHON_REQUEST = '3.12.12'
+# The kernel's own Python settings must not leak into the isolated interpreters.
+UV_ENV = {k: v for k, v in os.environ.items() if k not in ('PYTHONPATH', 'PYTHONHOME', 'PYTHONSTARTUP', 'HF_TOKEN', 'HUGGING_FACE_HUB_TOKEN')}
+UV_ENV.update(MPLBACKEND='Agg', UV_PYTHON_INSTALL_DIR=str(WORK_ROOT / 'python'))
 INDEX_ARGS = {
     'lab': ['--index-url', 'https://download.pytorch.org/whl/cu126', '--extra-index-url', 'https://pypi.org/simple', '--index-strategy', 'unsafe-best-match'],
     'phi4': ['--index-url', 'https://pypi.org/simple'],
@@ -335,9 +358,27 @@ out['torch_cuda'] = torch.version.cuda
 out['device'] = torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'cpu'
 print(json.dumps(out))
 """
-# uv is a standalone installer binary; installing it does not touch any module this kernel has loaded.
-subprocess.run([sys.executable, '-m', 'pip', 'install', '-q', f'uv=={UV_VERSION}'], check=True)
-UV = shutil.which('uv') or str(Path(sysconfig.get_path('scripts')) / 'uv')
+UV = WORK_ROOT / 'bin' / 'uv'
+if not (UV.exists() and (UV.parent / '.uv_sha256').exists() and (UV.parent / '.uv_sha256').read_text() == UV_SHA256):
+    if platform.system() != 'Linux' or platform.machine() != 'x86_64':
+        raise RuntimeError(f'this notebook runs on Linux x86_64 only (Colab, Kaggle, Linux Jupyter); found {platform.system()} {platform.machine()}')
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(UV_URL, timeout=120) as response:
+                wheel = response.read(UV_WHEEL_BYTES + 1)
+            break
+        except OSError:
+            if attempt == 2:
+                raise
+            time.sleep(2 ** attempt)
+    if len(wheel) != UV_WHEEL_BYTES or hashlib.sha256(wheel).hexdigest() != UV_SHA256:
+        raise RuntimeError('CONTRACT FAILURE: the uv wheel size or SHA-256 differs from the pin; re-run the cell, never skip the check')
+    with zipfile.ZipFile(io.BytesIO(wheel)) as archive:
+        member = next(n for n in archive.namelist() if n.endswith('.data/scripts/uv'))
+        UV.parent.mkdir(parents=True, exist_ok=True)
+        UV.write_bytes(archive.read(member))
+    UV.chmod(0o700)
+    (UV.parent / '.uv_sha256').write_text(UV_SHA256)
 ENV_PYTHON, ENVIRONMENTS = {}, {}
 for name in ('lab', 'phi4'):
     lock = WORK_ROOT / 'locks' / f'{name}.lock'
@@ -346,15 +387,16 @@ for name in ('lab', 'phi4'):
     digest = hashlib.sha256(lock.read_bytes()).hexdigest()
     marker = root / '.lock_sha256'
     started = time.time()
-    if not (python.exists() and marker.exists() and marker.read_text() == digest):
+    if not (python.exists() and marker.exists() and marker.read_text() == f'{digest} {PYTHON_REQUEST}'):
         shutil.rmtree(root, ignore_errors=True)
-        subprocess.run([UV, 'venv', '--quiet', '--python', PYTHON_REQUEST, str(root)], check=True)
-        subprocess.run([UV, 'pip', 'install', '--quiet', '--python', str(python), '--no-deps', '--no-cache', '--link-mode', 'copy', '-r', str(lock), *INDEX_ARGS[name]], check=True)
-        marker.write_text(digest)
-    probe = json.loads(subprocess.run([str(python), '-c', PROBE], capture_output=True, text=True, check=True).stdout)
+        subprocess.run([str(UV), 'venv', '--quiet', '--managed-python', '--python', PYTHON_REQUEST, str(root)], env=UV_ENV, check=True)
+        subprocess.run([str(UV), 'pip', 'install', '--quiet', '--python', str(python), '--require-hashes', '--only-binary', ':all:', '--no-deps', '--no-cache',
+                        '--link-mode', 'copy', '-r', str(lock), *INDEX_ARGS[name]], env=UV_ENV, check=True)
+        marker.write_text(f'{digest} {PYTHON_REQUEST}')
+    probe = json.loads(subprocess.run([str(python), '-c', PROBE], capture_output=True, text=True, check=True, env=UV_ENV).stdout)
     if not probe['cuda_available']:
         raise RuntimeError(f"the {name} environment cannot see the GPU (torch {probe['torch']}, CUDA {probe['torch_cuda']}, driver {RUNTIME['driver']}); see Troubleshooting")
-    ENVIRONMENTS[name] = {**probe, 'lock_sha256': digest, 'uv': UV_VERSION, 'install_seconds': round(time.time() - started, 1)}
+    ENVIRONMENTS[name] = {**probe, 'lock_sha256': digest, 'uv': UV_VERSION, 'uv_wheel_sha256': UV_SHA256, 'install_seconds': round(time.time() - started, 1)}
     ENV_PYTHON[name] = str(python)
     print(f"{name}: Python {probe['python']}, torch {probe['torch']} (CUDA {probe['torch_cuda']}), transformers {probe.get('transformers')}, "
           f"diffusers {probe.get('diffusers', '-')}, bitsandbytes {probe.get('bitsandbytes')} on {probe['device']} ({ENVIRONMENTS[name]['install_seconds']} s)")
@@ -376,7 +418,7 @@ from IPython.display import Image as IPImage
 from IPython.display import Markdown, display
 
 STAGE_LOG = {}
-CHILD_ENV = {k: v for k, v in os.environ.items() if k not in ('HF_TOKEN', 'HUGGING_FACE_HUB_TOKEN', 'PYTHONPATH')}  # the default path uses no credential
+CHILD_ENV = {k: v for k, v in os.environ.items() if k not in ('HF_TOKEN', 'HUGGING_FACE_HUB_TOKEN', 'PYTHONPATH', 'PYTHONHOME', 'PYTHONSTARTUP')}  # no credential; no kernel Python settings
 CHILD_ENV.update(MPLBACKEND='Agg', PYTHONHASHSEED='0', HF_HOME=str(WORK_ROOT / 'hf_home'), HF_HUB_DISABLE_TELEMETRY='1', HF_HUB_DISABLE_PROGRESS_BARS='1',
                  TOKENIZERS_PARALLELISM='false', CUBLAS_WORKSPACE_CONFIG=':4096:8', PYTHONUNBUFFERED='1',
                  HF_XET_CHUNK_CACHE_SIZE_BYTES='0')  # no hidden multi-GB download cache: weights live only where the stages put them
@@ -796,7 +838,7 @@ S12_RUN = r'''
 FLUX_STATE = json.loads((WORK / 'state' / 'flux_stage.json').read_text())
 PHI4_STATE = json.loads((WORK / 'state' / 'phi4_stage.json').read_text())
 FEATURE_STATE = json.loads((WORK / 'state' / 'features_stage.json').read_text())
-environment = {'runtime': RUNTIME, 'environments': ENVIRONMENTS, 'uv': UV_VERSION,
+environment = {'runtime': RUNTIME, 'environments': ENVIRONMENTS, 'uv': UV_VERSION, 'uv_wheel_sha256': UV_SHA256, 'python_isolated': PYTHON_REQUEST,
                'notebook': {'name': 'DIMER_Bosch_Synthetic_Defect_Augmentation_Capstone.ipynb', 'profile': 'E2E', 'mode': 'GUIDED', 'notebook_spec': '2.2'},
                'models': {'phi4': PHI4_STATE['model'], 'flux': FLUX_STATE['model'], 'backbone': FEATURE_STATE['backbone']},
                'precision': {'phi4': 'nf4 weights, float16 compute', 'flux': FLUX_STATE['precision'], 'backbone': 'float32', 'head': 'float32 on CPU, deterministic algorithms'}}
@@ -962,6 +1004,8 @@ S13_TROUBLE = """
 | Runtime check: not enough disk | a previous run's files, or a small disk | Runtime → Disconnect and delete runtime, then Run all; keep `DELETE_MODEL_WEIGHTS_AFTER_USE = True` |
 | Environment "cannot see the GPU" | driver older than the CUDA 12 wheels need | record the driver shown by the runtime check and report it; do not switch to unpinned packages |
 | `uv` or package download errors | transient network or index outage | re-run the environment cell; completed environments are reused via their lock digest |
+| `hash mismatch` / `uv wheel ... SHA-256` | a substituted or truncated download | re-run the environment cell; never remove `--require-hashes` or the uv pin |
+| `Linux x86_64 only` | macOS, Windows or ARM runtime | use Colab, Kaggle or a Linux x86_64 Jupyter host |
 | `download ... did not complete` | the dataset host timed out | re-run the data cell; completed bytes are resumed. A timeout is an access problem, not evidence of corrupt data |
 | `CONTRACT FAILURE: ... digest` | a corrupted or substituted file | delete the named file under `work/sdi_capstone/` and re-run; never skip the check |
 | exit code -9 or "Killed" during a model load | host memory exhausted | note `lowest host memory available` from the stage log; use a high-RAM runtime; the notebook does not silently change precision or sizes |
@@ -1032,7 +1076,7 @@ def build() -> dict:
     cells.append(code(CONFIG, form=True))
     cells.append(md("The runtime check records the GPU, driver, host memory and free disk, and stops early with an instruction if the run cannot fit."))
     cells.append(code(RUNTIME_CHECK, form=True))
-    cells.append(md("Both environments are created from exact locks: every transitive package is pinned, and `uv` installs with `--no-deps`, so nothing floats. Reruns reuse an environment whose lock digest matches."))
+    cells.append(md("Both environments are created from exact hash locks: every transitive package is pinned with its SHA-256, and a pinned `uv` installs wheels only with `--require-hashes --only-binary :all: --no-deps` into a uv-managed CPython 3.12.12, so nothing floats and nothing is installed into this notebook's kernel (no restart). Reruns reuse an environment whose lock digest matches. This works on Linux x86_64 only (Colab, Kaggle, Linux Jupyter)."))
     cells.append(code(locks_cell(), form=True))
     cells.append(code(INSTALL, form=True))
     cells.append(md(CORE_INTRO))
@@ -1083,6 +1127,7 @@ def build() -> dict:
                 "status": "candidate",
                 "capability": "controlled comparison of synthetic (Phi-4 described, FLUX generated) versus conventional augmentation for a frozen-feature defect classifier on the Bosch SDI dataset",
                 "generated_from": {"generator": GENERATOR, "repository": REPO, "sources": sources},
+                "revisions": REVISIONS,
             },
         },
         "nbformat": 4,

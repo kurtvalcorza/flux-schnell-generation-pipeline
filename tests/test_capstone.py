@@ -7,6 +7,7 @@ metrics, the bootstrap, the matched schedule, prompt bounds and notebook/source 
 # ruff: noqa: E501
 from __future__ import annotations
 
+import ast
 import csv
 import importlib.util
 import json
@@ -572,10 +573,95 @@ def test_model_pins_are_immutable():
         assert f'("{entry["path"]}", {entry["bytes"]}, "{entry["sha256"]}")' in flux, entry["path"]
 
 
+def _lock_entries(lock: str) -> dict[str, list[str]]:
+    """Parse a `uv pip compile --generate-hashes` lock: {'name==version': [sha256, ...]}."""
+    entries: dict[str, list[str]] = {}
+    current = None
+    for line in (CAPSTONE / "locks" / f"{lock}.lock").read_text().splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        pin = re.match(r"^([A-Za-z0-9_.\-]+==[A-Za-z0-9_.+\-]+) \\$", line)
+        digest = re.match(r"^    --hash=sha256:([0-9a-f]{64})( \\)?$", line)
+        assert pin or (digest and current), line
+        if pin:
+            current = pin.group(1)
+            entries[current] = []
+        else:
+            entries[current].append(digest.group(1))
+    return entries
+
+
 def test_locks_pin_every_package():
+    """Every package is pinned with ==, and every pin carries at least one SHA-256 (uv relay 2026-10-03)."""
+    for lock, count in (("lab", 74), ("phi4", 51)):
+        entries = _lock_entries(lock)
+        assert len(entries) == count, (lock, len(entries))
+        assert all(entries.values()), [pin for pin, hashes in entries.items() if not hashes]
+        direct = {line.strip() for line in (CAPSTONE / "locks" / f"{lock}.in").read_text().splitlines() if line.strip()}
+        assert {pin.split("+")[0] for pin in entries} >= direct, direct - {pin.split("+")[0] for pin in entries}
+
+
+def _code(notebook: dict) -> str:
+    return "\n".join("".join(c["source"]) for c in notebook["cells"] if c["cell_type"] == "code")
+
+
+def test_nothing_is_installed_into_the_kernel(notebook):
+    """uv relay 2026-10-03: no pip install (uv included) and no restart guard; only the venvs receive packages."""
+    code = _code(notebook)
+    assert not re.search(r"'-m', 'pip'|-m pip|!pip|%pip|get_ipython\(\)\.system|os\._exit|kill\(os\.getpid", code)
+    assert "sys.executable" not in code
+    # The only pip-install in the notebook is uv's, aimed at a locked venv interpreter.
+    assert re.findall(r"\bpip', 'install'", code) == ["pip', 'install'"] and "[str(UV), 'pip', 'install', '--quiet', '--python', str(python)" in code
+    assert "Restart session, then Run all" not in code
+
+
+def test_uv_is_a_pinned_verified_binary(notebook):
+    install = next("".join(c["source"]) for c in notebook["cells"] if "create the two locked environments" in "".join(c["source"]))
+    assert "UV_SHA256 = 'a63d18a0aa38ee9f21a5406afbbaeb41303bcd954be9d6b7c1b95ac275e53958'" in install
+    assert "UV_WHEEL_BYTES = 20478749" in install and "uv-0.12.19-py3-none-manylinux_2_17_x86_64" in install
+    assert "len(wheel) != UV_WHEEL_BYTES or hashlib.sha256(wheel).hexdigest() != UV_SHA256" in install
+    assert "'--managed-python', '--python', PYTHON_REQUEST" in install and "PYTHON_REQUEST = '3.12.12'" in install
+    assert "'--require-hashes', '--only-binary', ':all:', '--no-deps'" in install
+    assert install.count("env=UV_ENV") == 3
+    assert "Linux x86_64 only" in install
+
+
+def test_child_processes_drop_kernel_python_settings(notebook):
+    code = _code(notebook)
+    for env_name in ("UV_ENV", "CHILD_ENV"):
+        line = next(x for x in code.splitlines() if x.startswith(f"{env_name} = {{k: v for k, v in os.environ.items()"))
+        for var in ("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "HF_TOKEN"):
+            assert f"'{var}'" in line, (env_name, var)
+    assert "MPLBACKEND='Agg'" in code
+
+
+def test_every_stage_runs_in_a_locked_venv(notebook):
+    code = _code(notebook)
+    calls = re.findall(r"run_stage\('[a-z0-9_]+', '([a-z0-9]+)', 'stage_[a-z]+\.py'", code)
+    assert calls and set(calls) <= {"lab", "phi4"}, calls
+    assert "cmd = [ENV_PYTHON[env], '-u', str(WORK_ROOT / script)" in code
+
+
+def test_embedded_locks_are_raw_and_byte_identical(notebook):
+    """The hash locks keep their line continuations: raw strings, written back byte-for-byte."""
+    cell = next("".join(c["source"]) for c in notebook["cells"] if "# @title Infrastructure: exact dependency locks" in "".join(c["source"]))
+    assign = next(node for node in ast.parse(cell).body if isinstance(node, ast.Assign) and node.targets[0].id == "LOCKS")
+    locks = ast.literal_eval(assign.value)
     for lock in ("lab", "phi4"):
-        for line in (CAPSTONE / "locks" / f"{lock}.lock").read_text().splitlines():
-            assert re.match(r"^[A-Za-z0-9_.\-]+==[A-Za-z0-9_.+\-]+$", line), line
+        assert locks[lock].strip() == (CAPSTONE / "locks" / f"{lock}.lock").read_text(encoding="utf-8").strip()
+        assert " \\\n    --hash=sha256:" in locks[lock]
+
+
+def test_no_notebook_line_exceeds_2000_characters(notebook):
+    longest = max((len(line), n) for n, c in enumerate(notebook["cells"]) for line in "".join(c["source"]).split("\n"))
+    assert longest[0] <= 2000, longest
+
+
+def test_revision_log_records_the_uv_move(notebook):
+    revisions = notebook["metadata"]["dimer"]["revisions"]
+    entry = next(r for r in revisions if r["change"] == "uv isolated environment")
+    assert entry["date"] == "2026-10-03" and entry["previous_blob"] == "c64f21cc081d68aae0955167d2dfb432e5f45866"
+    assert notebook["metadata"]["dimer"]["generated_from"]["generator"] == "tools/build_capstone_notebook.py/2"
 
 
 def test_split_manifest_columns_round_trip(tmp_path):
