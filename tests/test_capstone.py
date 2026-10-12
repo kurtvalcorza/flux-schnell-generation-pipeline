@@ -961,10 +961,14 @@ def test_result_is_interpreted_and_answered_within_claim_levels(notebook):
     """BSA2-M1 (provisional option A): per-class decomposition, fixed recipe, claim levels and a bounded answer."""
     markdown = ["".join(c["source"]) for c in notebook["cells"] if c["cell_type"] == "markdown"]
     reading = next(m for m in markdown if m.lstrip().startswith("### Reading C − B"))
-    for phrase in ("balanced accuracy", "recall", "precision", "fewer defect calls", "Signal", "Comparator", "Operational usefulness"):
+    for phrase in ("balanced accuracy", "recall", "precision", "decomposition", "Normal versus any defect", "Subtype", "canonical seed", "Signal", "Comparator", "Operational usefulness"):
         assert phrase in reading, phrase
     answer = next(m for m in markdown if m.lstrip().startswith("### What this run shows"))
-    assert "Write your conclusion" not in answer and "not supported" in answer and "not tested" in answer and "84061cc7" in answer
+    assert "Write your conclusion" not in answer and "not established" in answer and "not tested" in answer and "84061cc7" in answer
+    # CX1/CX2: the canonical seed must not explain the three-seed mean, and no categorical detection claim
+    assert "not because it found more defects" not in answer and "not supported" not in answer
+    assert "near zero in balanced accuracy, the gain is mostly precision" not in reading
+    assert "has not been established" in answer and "seed 17" in answer
     assert any("fixed, untuned shared recipe" in m and "not tuned per arm" in m for m in markdown)
     sources = ["".join(c["source"]) for c in notebook["cells"]]
     assert sources.index(reading) < sources.index(next(m for m in markdown if "### Write your conclusion" in m)) < sources.index(answer)
@@ -988,3 +992,51 @@ def test_write_up_layer_and_attribution(notebook):
     records = _cell(notebook, "# @title Write environment, run summary")
     bosch = records.split("else:\n    dataset_terms", 1)[0]
     assert bosch.count("https://creativecommons.org/licenses/by-sa/4.0/") == 2 and "(2022)" in bosch and "BMVC 2022" in bosch
+
+
+def _metrics_from_confusions(cms: dict) -> dict:
+    """metrics.json-shaped dict built with the core's own metrics from {arm: {seed: confusion}}."""
+    order = ["normal", "scratches", "spots"]
+    per_run = {a: {s: core.metrics_from_confusion(np.array(cm), order) for s, cm in runs.items()} for a, runs in cms.items()}
+    summary = {a: {m: {"mean": float(np.mean([r[m] for r in runs.values()])), "per_seed": {s: r[m] for s, r in runs.items()}} for m in ("macro_f1", "balanced_accuracy")} for a, runs in per_run.items()}
+    return {"per_run": per_run, "summary": summary}
+
+
+def _section10(notebook, metrics, seeds):
+    cell = _cell(notebook, "show('error_gallery.png')")
+    tables: list = []
+    ns = {"METRICS": metrics, "RECORD": {"selection": {"seed": seeds[0]}, "seeds": seeds}, "order": ["normal", "scratches", "spots"],
+          "show": lambda *a: None, "table": lambda headers, rows: tables.append((headers, rows)), "print": lambda *a, **k: None,
+          "fmt": lambda v, d=3: "—" if v is None else f"{v:.{d}f}"}
+    exec(compile(cell, "section10", "exec"), ns)
+    return tables
+
+
+def test_recall_changes_can_cancel_in_balanced_accuracy():
+    """CX2 (a): balanced accuracy unchanged while per-class recalls move in opposite directions."""
+    b = core.metrics_from_confusion(np.array([[90, 5, 5], [2, 6, 2], [2, 2, 6]]), ["normal", "scratches", "spots"])
+    c = core.metrics_from_confusion(np.array([[90, 5, 5], [2, 8, 0], [2, 4, 4]]), ["normal", "scratches", "spots"])
+    assert abs(b["balanced_accuracy"] - c["balanced_accuracy"]) < 1e-12
+    assert c["per_class"]["scratches"]["recall"] > b["per_class"]["scratches"]["recall"] and c["per_class"]["spots"]["recall"] < b["per_class"]["spots"]["recall"]
+
+
+def test_section10_decomposes_macro_f1_and_separates_detection_from_subtype(notebook):
+    """CX1 + CX2 (b): the notebook's own Section 10 cell. C converts spot-predicted scratches into scratch predictions
+    (subtype improves, scratch recall rises) while exactly the same defect images are flagged: defect sensitivity
+    and the normal false-alarm rate do not change. The decomposition reproduces the macro-F1 change exactly."""
+    b17 = [[90, 5, 5], [2, 4, 4], [2, 1, 7]]
+    c17 = [[90, 5, 5], [2, 7, 1], [2, 1, 7]]
+    b29 = [[88, 6, 6], [3, 5, 2], [1, 2, 7]]
+    c29 = [[91, 4, 5], [3, 6, 1], [1, 1, 8]]
+    metrics = _metrics_from_confusions({"A": {"17": b17, "29": b29}, "B": {"17": b17, "29": b29}, "C": {"17": c17, "29": c29}})
+    tables = _section10(notebook, metrics, [17, 29])
+    decomposition = next(rows for headers, rows in tables if "macro-F1 change" in headers)
+    for row in decomposition:
+        assert row[-2] == row[-1], row  # mean of per-class F1 changes == macro-F1 change, per seed and over seeds
+    detection = {(r[0], r[1]): r for headers, rows in tables if "defect sensitivity (flagged as any defect)" in headers for r in rows}
+    assert detection[("B", "17")][2] == detection[("C", "17")][2] == "16 / 20 = 0.800"
+    assert detection[("B", "17")][3] == detection[("C", "17")][3] == "10 / 100 = 0.100"
+    assert detection[("B", "17")][4] == "11 / 16" and detection[("C", "17")][4] == "14 / 16"
+    sc_b = metrics["per_run"]["B"]["17"]["per_class"]["scratches"]["recall"]
+    sc_c = metrics["per_run"]["C"]["17"]["per_class"]["scratches"]["recall"]
+    assert sc_c > sc_b  # subtype recall rose without one more defective surface being flagged
