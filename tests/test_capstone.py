@@ -14,6 +14,7 @@ import json
 import re
 import stat
 import sys
+import types
 import zipfile
 from pathlib import Path
 
@@ -484,6 +485,8 @@ def test_notebook_is_generated_from_sources():
 def test_notebook_metadata_declares_profile_and_mode(notebook):
     meta = notebook["metadata"]["dimer"]
     assert (meta["notebook_spec"], meta["profile"], meta["pedagogical_mode"], meta["standalone"]) == ("2.2", "E2E", "GUIDED", True)
+    assert (meta["notebook_profile"], meta["notebook_mode"], meta["notebook_kind"]) == ("E2E", "GUIDED", "CAPSTONE")
+    assert {d["kept"].split(",")[0] for d in meta["kept_deviations"]} == {"declares NOTEBOOK_SPEC 2.2", "APA 7 references with author-year citations"}
     first = "".join(notebook["cells"][0]["source"])
     assert "**Profile:** `E2E`" in first and "**Mode:** `GUIDED`" in first
     assert notebook["metadata"]["accelerator"] == "GPU"
@@ -854,3 +857,134 @@ def test_every_frozen_source_is_written_before_the_freeze(notebook):
     written = {s.split("\n", 1)[0].split("/")[-1]: i for i, s in enumerate(sources) if s.startswith("%%writefile")}
     assert set(core.STAGE_SOURCES) <= set(written)
     assert all(i < fit for name, i in written.items() if name in core.STAGE_SOURCES), {n: i for n, i in written.items() if i > fit}
+
+
+# ------------------------------------------------------------------------------------------- BSA2 review (2026-10-12)
+
+def _cell(notebook: dict, start: str) -> str:
+    return next("".join(c["source"]) for c in notebook["cells"] if "".join(c["source"]).startswith(start))
+
+
+class _FakeProc:
+    def __init__(self, lines, code):
+        self.stdout, self.pid, self.code, self.returncode = iter(lines), 4242, code, None
+
+
+def _runner(notebook, tmp_path, monkeypatch, lines, code, data_source="bosch"):
+    """Exec the notebook's own stage-runner cell with a fake child process (no GPU, no /proc, no real wait4)."""
+    display = types.ModuleType("IPython.display")
+    display.Image, display.Markdown, display.display = object, str, lambda *a, **k: None
+    monkeypatch.setitem(sys.modules, "IPython", types.ModuleType("IPython"))
+    monkeypatch.setitem(sys.modules, "IPython.display", display)
+    (tmp_path / "state").mkdir(exist_ok=True)
+    printed: list[str] = []
+    ns = {"WORK_ROOT": tmp_path, "WORK": tmp_path, "BASE": tmp_path, "RUN_CONFIG": tmp_path / "run_config.json", "ENV_PYTHON": {"lab": "python"},
+          "DATA_SOURCE": data_source, "json": json, "time": __import__("time"), "shutil": __import__("shutil"), "Path": Path,
+          "print": lambda *a, end="\n", **k: printed.append(" ".join(map(str, a)) + end)}
+    exec(compile(_cell(notebook, "# @title Infrastructure: stage runner"), "runner", "exec"), ns)
+    proc = _FakeProc(lines, code)
+    usage = types.SimpleNamespace(ru_maxrss=2048)
+    ns["os"] = types.SimpleNamespace(wait4=lambda pid, opt: (pid, code, usage), waitstatus_to_exitcode=lambda s: s, environ={})
+    ns["subprocess"] = types.SimpleNamespace(Popen=lambda *a, **k: proc, PIPE=-1, STDOUT=-2)
+    ns["_smi"], ns["_mem_available_mib"] = (lambda q: ""), (lambda: None)
+    return ns, printed
+
+
+def test_contract_refusal_stops_with_one_message_and_no_traceback(notebook, tmp_path, monkeypatch):
+    """BSA2-m5: exit 2 with a CONTRACT FAILURE line is a refusal: one message naming the rule and the recovery step,
+    rendered without a Python traceback; Run all still stops (it raises)."""
+    rule = "manifest.csv line 7: class 'Dent' is not lowercase"
+    ns, printed = _runner(notebook, tmp_path, monkeypatch, ["reading manifest\n", "\n", f"CONTRACT FAILURE: {rule}\n"], 2, data_source="byod")
+    with pytest.raises(RuntimeError) as info:
+        ns["run_stage"]("data", "lab", "stage_data.py")
+    exc = info.value
+    assert type(exc).__name__ == "StageRefused" and exc.rule == rule
+    rendered = exc._render_traceback_()
+    assert len(rendered) == 2 and rule in rendered[0] and "BYOD check cell" in rendered[1] and "Run all again" in rendered[1]
+    assert not any("Traceback" in line or "File " in line for line in rendered)
+    assert "".join(printed).count(rule) == 0, "the rule is shown once, in the refusal message, not also streamed"
+    assert "reading manifest" in "".join(printed)
+    assert json.loads((tmp_path / "state" / "stage_log.json").read_text())["data"]["exit_code"] == 2
+
+
+def test_stage_crash_is_still_an_error(notebook, tmp_path, monkeypatch):
+    ns, printed = _runner(notebook, tmp_path, monkeypatch, ["Traceback (most recent call last):\n", "ZeroDivisionError\n"], 1)
+    with pytest.raises(RuntimeError) as info:
+        ns["run_stage"]("fit", "lab", "stage_fit.py")
+    assert type(info.value).__name__ == "RuntimeError" and "exit code 1" in str(info.value)
+    ns, _ = _runner(notebook, tmp_path, monkeypatch, ["usage: stage_data.py [-h]\n"], 2)  # argparse exit 2 without a contract line
+    with pytest.raises(RuntimeError) as info:
+        ns["run_stage"]("data", "lab", "stage_data.py")
+    assert type(info.value).__name__ == "RuntimeError"
+    ns, printed = _runner(notebook, tmp_path, monkeypatch, ["ok\n"], 0)
+    assert ns["run_stage"]("prompts", "lab", "stage_prompts.py")["exit_code"] == 0 and "ok\n" in printed
+
+
+def test_byod_check_cell_shows_a_refusal_as_one_line(notebook):
+    cell = next("".join(c["source"]) for c in notebook["cells"] if "".join(c["source"]).startswith("if BYOD_CHECK_ZIP:"))
+
+    class StageRefused(RuntimeError):
+        pass
+
+    printed: list[str] = []
+    ns = {"BYOD_CHECK_ZIP": "x.zip", "print": printed.append,
+          "run_stage": lambda *a: (_ for _ in ()).throw(StageRefused("stage 'byod_check' refused: no manifest.csv"))}
+    exec(compile(cell, "byod_check", "exec"), ns)
+    assert printed == ["BYOD check did not pass: stage 'byod_check' refused: no manifest.csv"]
+
+
+def _contrast_lines(notebook, valid):
+    cell = _cell(notebook, "run_stage('evaluate'")
+    printed: list[str] = []
+    contrast = {"mean_difference": 0.0443, "per_seed": {"17": 0.04, "29": 0.05, "43": 0.04}, "interval_95": [0.0193, 0.0671]}
+    summ = {m: {"per_seed": {"17": 0.6}, "mean": 0.6, "min": 0.6, "max": 0.6} for m in ("macro_f1", "balanced_accuracy", "accuracy")}
+    ns = {"run_stage": lambda *a: None, "print": lambda *a: printed.append(" ".join(map(str, a))), "table": lambda *a: None, "show": lambda *a: None,
+          "fmt": lambda v, d=3: f"{v:.{d}f}", "RECORD": {"seeds": [17]},
+          "load": lambda name: {"test_counts": {}, "comparison_valid": valid, "validity_note": "" if valid else "overlap",
+                                "summary": {"C": summ}, "arms": {"C": "C"}, "contrasts": {"C - B": contrast}}}
+    exec(compile(cell, "evaluate", "exec"), ns)
+    return printed
+
+
+def test_contrast_verdicts_are_withheld_when_the_comparison_is_invalid(notebook):
+    """BSA2-m4: a comparison marked invalid prints no 'above zero' verdict, and says so first."""
+    valid = _contrast_lines(notebook, True)
+    assert any("the interval is above zero" in line for line in valid) and not any("INVALID" in line for line in valid)
+    invalid = _contrast_lines(notebook, False)
+    assert not any("above zero" in line or "includes zero" in line for line in invalid)
+    assert "INVALID COMPARISON" in invalid[1] and any("INVALID - not evidence" in line for line in invalid[2:])
+    summary = _cell(notebook, "# @title Write environment, run summary")
+    assert summary.index('print(f"VALIDITY') < summary.index("print(f\"CONTRAST") and "(INVALID - not evidence)" in summary
+
+
+def test_result_is_interpreted_and_answered_within_claim_levels(notebook):
+    """BSA2-M1 (provisional option A): per-class decomposition, fixed recipe, claim levels and a bounded answer."""
+    markdown = ["".join(c["source"]) for c in notebook["cells"] if c["cell_type"] == "markdown"]
+    reading = next(m for m in markdown if m.lstrip().startswith("### Reading C − B"))
+    for phrase in ("balanced accuracy", "recall", "precision", "fewer defect calls", "Signal", "Comparator", "Operational usefulness"):
+        assert phrase in reading, phrase
+    answer = next(m for m in markdown if m.lstrip().startswith("### What this run shows"))
+    assert "Write your conclusion" not in answer and "not supported" in answer and "not tested" in answer and "84061cc7" in answer
+    assert any("fixed, untuned shared recipe" in m and "not tuned per arm" in m for m in markdown)
+    sources = ["".join(c["source"]) for c in notebook["cells"]]
+    assert sources.index(reading) < sources.index(next(m for m in markdown if "### Write your conclusion" in m)) < sources.index(answer)
+
+
+def test_write_up_layer_and_attribution(notebook):
+    """BSA2-m2 / m3 / m6 / m1: use notice before the first code cell, headings, licence link, BMVC citation, pinned FLUX
+    reference, official-split reason, id naming, measured resources."""
+    cells = notebook["cells"]
+    first_code = next(i for i, c in enumerate(cells) if c["cell_type"] == "code")
+    before = "\n".join("".join(c["source"]) for c in cells[:first_code])
+    assert re.search(r"^> \*\*⚠️ Notice\.\*\*", before, re.M) and "industrial inspection" in before and "Data you bring stays in your runtime" in before
+    assert "has not yet been recorded" not in before and "2,106 s" in before and "11,529 MiB" in before and "8,909 MiB" in before
+    markdown = "\n".join("".join(c["source"]) for c in cells if c["cell_type"] == "markdown")
+    for heading in ("### Problem statement", "### Data context"):
+        assert heading in markdown
+    assert "github.com/boschresearch/The-Surface-Defect-Inspection-Dataset/tree/c6e0afe66e9dbd9d99326c986ea884ddf2aad9f8" in markdown
+    assert "(Wang et al., 2022)" in markdown and "(Wang et al., 2023)" not in markdown and "British Machine Vision Conference" in markdown
+    assert "huggingface.co/black-forest-labs/FLUX.1-schnell/blob/741f7c3ce8b383c54771c7003378a50191e9efe9" in markdown
+    assert "official split (its train / val / test folders) is not used" in markdown and "not this notebook's partition" in markdown
+    records = _cell(notebook, "# @title Write environment, run summary")
+    bosch = records.split("else:\n    dataset_terms", 1)[0]
+    assert bosch.count("https://creativecommons.org/licenses/by-sa/4.0/") == 2 and "(2022)" in bosch and "BMVC 2022" in bosch

@@ -35,6 +35,21 @@ REVISIONS = [
         "PYTHONPATH/PYTHONHOME/PYTHONSTARTUP are dropped from child processes. Linux x86_64 only. Stage code unchanged.",
         "previous_blob": "c64f21cc081d68aae0955167d2dfb432e5f45866",
     },
+    {
+        "date": "2026-10-12",
+        "change": "capstone review BSA2",
+        "summary": "Guided reading of C - B through per-class precision/recall and balanced accuracy, claim levels and a bounded "
+        "answer to the title question (BSA2-M1, provisional option A); fixed untuned shared recipe labelled; measured resources "
+        "and status (m1); notebook_kind, use notice, Problem statement and Data context (m2); BMVC 2022 dataset citation, "
+        "CC BY-SA 4.0 link, pinned FLUX reference, ResNet-18 licence (m3); contrast verdicts gated on comparison_valid (m4); "
+        "a stage refusal (exit 2) stops with one message and no traceback (m5); official split and id naming explained (m6). "
+        "Stage code unchanged.",
+        "previous_blob": "84061cc7dfdfe270cd75840c1d48d22d198d3fba",
+    },
+]
+KEPT_DEVIATIONS = [
+    {"spec_ids": ["3.4 notebook_spec"], "kept": "declares NOTEBOOK_SPEC 2.2, not 2.5", "reason": "maintainer ruling for the 2026-10-12 capstone round: the 2.4/2.5 write-up and kind layer is adopted without re-declaring the spec version"},
+    {"spec_ids": ["DOC14", "DOC16"], "kept": "APA 7 references with author-year citations, not ACM/IEEE numbered", "reason": "maintainer ruling for the 2026-10-12 capstone round; tests/test_capstone.py checks APA author-year citations against the reference list"},
 ]
 SECTION_MARK = re.compile(r"^# %% \[section\] (.+)$", re.M)
 
@@ -81,13 +96,17 @@ def checkpoint(question: str, answer: str) -> str:
 OPENING = f"""
 # DIMER Guided Notebook: Can Synthetic Defects Improve Visual Inspection?
 
-**Profile:** `E2E` · **Mode:** `GUIDED` · **Notebook spec:** DIMER Notebook Specification 2.2 · **Status:** candidate (the combined Colab T4 run has not yet been recorded)
+**Profile:** `E2E` · **Mode:** `GUIDED` · **Kind:** `CAPSTONE` · **Notebook spec:** DIMER Notebook Specification 2.2 · **Status:** candidate. The default path passed a recorded Colab CLI run on a fresh Colab T4 (revision `439c34f`, notebook blob `84061cc7`, 2026-10-04). This revision changes text, display and error-presentation code only (the stage code is unchanged) and has not had its own hosted run; the bring-your-own-data path has no hosted run yet.
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)]({COLAB})
 
+> **⚠️ Notice.** For research, training and evaluation only. Not validated for production, clinical, diagnostic or safety-critical use, and not a validated industrial inspection, quality-control or safety system: do not use its classifier or its conclusions to accept or reject real parts. Running this notebook downloads third-party model weights and datasets under their own licenses (see the repository's model card and the attribution record in Section 12) and uses compute on your own Colab or Kaggle account. Data you bring stays in your runtime, and you are responsible for having the right to use it. Results here are tutorial evidence, not benchmarks. Everything is provided "as is", without warranty of any kind. To the maximum extent permitted by law, the maintainers and the DIMER platform accept no liability for its use.
+
+### Problem statement
+
 This notebook runs a controlled experiment. You will take a small, fixed set of labelled photographs of manufactured surfaces from the Bosch Surface Defect Inspection (SDI) dataset, ask **Phi-4-multimodal-instruct** to describe what it sees, compile those descriptions into bounded text prompts, let **FLUX.1 [schnell]** generate candidate *scratch* and *spot* images from the prompts, and then test whether substituting those generated images into training improves a simple classifier on **real held-out photographs**, compared with conventional augmentation.
 
-Success means a reproducible, interpretable comparison. A negative or null result is a valid outcome: the notebook does not require the synthetic images to help.
+Success means a reproducible, interpretable comparison. A negative or null result is a valid outcome: the notebook does not require the synthetic images to help. Section 10 ends with a bounded answer to the title question, with the level of evidence behind each part of it.
 
 **Run all:** the default path downloads and verifies the dataset, audits it, freezes a grouped split, fits a majority baseline and a real-only classifier, describes training exemplars with Phi-4, generates 64 candidates with FLUX, fits three matched classifier arms with three seeds, freezes the experiment, scores the real test set once, exports the selected classifier, and rebuilds it in a fresh process to prove the export reproduces the same outputs. It needs no token, login, upload, restart, repository clone or DIMER service.
 
@@ -112,7 +131,7 @@ AUDIENCE = """
 
 **Runtime.** A Colab **T4 GPU** runtime (Runtime → Change runtime type → T4 GPU) with at least 15 GB of GPU memory, on Linux x86_64 (Colab, Kaggle or Linux Jupyter; the isolated environments use Linux wheels). The runtime check in Section 1 stops with an instruction if no suitable GPU is attached.
 
-**Resource budget (estimates, not measurements).** About 53 GB of downloads (dataset 1.6 GB, Phi-4 11.2 GB, FLUX 33.7 GB, ResNet-18 0.05 GB, Python wheels about 6 GB) and about 55 GB of free disk with the default of deleting each model's weights after use. Model time is expected to be well under 90 minutes on a T4, excluding downloads. The notebook measures and records the actual download bytes, stage times, peak host memory and peak GPU memory; a later hosted run replaces these estimates.
+**Resource budget.** Measured on the recorded Colab CLI run of revision `439c34f` (notebook blob `84061cc7`) on a fresh Colab T4 (15,360 MiB GPU, 12.7 GiB host RAM), 2026-10-04: 2,106 s (35 min) session wall time, of which 1,833 s in the model stages; peak GPU memory in use 11,529 MiB; lowest available host memory 8,909 MiB (during the FLUX stage). These figures come from that run and were not re-measured for this revision, whose stage code is unchanged. Estimates, not measured by that run: about 53 GB of downloads (dataset 1.6 GB, Phi-4 11.2 GB, FLUX 33.7 GB, ResNet-18 0.05 GB, Python wheels about 6 GB) and about 55 GB of free disk with the default of deleting each model's weights after use. The notebook measures and records your run's download bytes, stage times, peak host memory and peak GPU memory.
 
 ### How to use this notebook
 
@@ -163,7 +182,7 @@ The experiment trains a small classifier on top of frozen image features in thre
 | **B** conventional augmentation | the same real images, each drawn as one of four fixed flip/brightness/contrast views | primary practical comparator |
 | **C** synthetic augmentation | as B, but each defect slot draws a generated image with probability 0.5 | tests the generated pool |
 
-The **primary contrast is C − B**; B − A is context.
+The **primary contrast is C − B**; B − A is context. Macro-F1 at the argmax decision rule is the pre-declared primary metric; balanced accuracy and per-class precision and recall are read beside it in Section 10, because macro-F1 can rise for more than one reason.
 
 **Make a prediction now, before any model runs.** Write down (1) whether C − B will be positive, zero or negative, (2) roughly how large, and (3) which class you expect synthetic images to help most. You will compare against the evidence in Section 10.
 
@@ -190,7 +209,7 @@ GLOSSARY = details("Glossary (open when a term is unfamiliar)", """
 - **Macro-F1** — compute F1 (the harmonic mean of precision and recall) separately for each class, then average the classes with equal weight. A missed rare class hurts it as much as a missed common one (Sokolova & Lapalme, 2009).
 - **Balanced accuracy** — the average of per-class recall.
 - **Augmentation** — label-preserving transformations of training images (here: horizontal flip, mild brightness and contrast) that add variation without new photographs.
-- **Synthetic augmentation** — adding generated images to training (Trabucco et al., 2023; Wang et al., 2023).
+- **Synthetic augmentation** — adding generated images to training (Trabucco et al., 2023; Wang et al., 2022).
 - **Intended label** — the class named in the prompt that produced a generated image. Nobody has checked that the image shows that defect.
 - **Held-out evaluation** — scoring on images that were never used for fitting or for any choice. **Validation** images are used for choices (epoch, exported arm); **test** images are used once, after everything is frozen.
 - **Group / leakage** — near-identical images (duplicates, consecutive frames) must stay in the same partition; otherwise the test set contains near-copies of training images and scores are inflated.
@@ -418,6 +437,27 @@ from IPython.display import Image as IPImage
 from IPython.display import Markdown, display
 
 STAGE_LOG = {}
+
+
+class StageRefused(RuntimeError):
+    """A stage refused its input or a frozen check and named the rule. Run all stops here, but IPython shows only this
+    message (through _render_traceback_), not a Python traceback."""
+
+    def __init__(self, name, rule):
+        self.stage, self.rule = name, rule
+        super().__init__(f"stage '{name}' refused: {rule}")
+
+    def _render_traceback_(self):
+        if self.stage == 'byod_check':
+            step = 'Fix the zip (the message names the line, column, class, group or limit) and run the BYOD check cell again.'
+        elif self.stage == 'data' and globals().get('DATA_SOURCE') == 'byod':
+            step = ('Nothing after this cell can run on this data. Fix the zip (the message names the line, column, class, group or limit), '
+                    'check it with the BYOD check cell in Section 13.3, then Run all again.')
+        else:
+            step = 'Nothing after this cell can run. Find the message in Troubleshooting (Section 13.4); never skip or edit the check.'
+        return [f"REFUSED  stage '{self.stage}': {self.rule}", f"What to do: {step}"]
+
+
 CHILD_ENV = {k: v for k, v in os.environ.items() if k not in ('HF_TOKEN', 'HUGGING_FACE_HUB_TOKEN', 'PYTHONPATH', 'PYTHONHOME', 'PYTHONSTARTUP')}  # no credential; no kernel Python settings
 CHILD_ENV.update(MPLBACKEND='Agg', PYTHONHASHSEED='0', HF_HOME=str(WORK_ROOT / 'hf_home'), HF_HUB_DISABLE_TELEMETRY='1', HF_HUB_DISABLE_PROGRESS_BARS='1',
                  TOKENIZERS_PARALLELISM='false', CUBLAS_WORKSPACE_CONFIG=':4096:8', PYTHONUNBUFFERED='1',
@@ -459,7 +499,11 @@ def run_stage(name, env, script, *args):
     monitor = threading.Thread(target=sample, daemon=True)
     monitor.start()
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=CHILD_ENV, cwd=BASE)
+    refusal = None
     for line in proc.stdout:
+        if line.startswith('CONTRACT FAILURE:'):
+            refusal = line.split(':', 1)[1].strip()  # shown once, in the refusal message below
+            continue
         print(line, end='')
     _, status, usage = os.wait4(proc.pid, 0)
     proc.returncode = os.waitstatus_to_exitcode(status)
@@ -472,7 +516,11 @@ def run_stage(name, env, script, *args):
     (WORK / 'state' / 'stage_log.json').write_text(json.dumps(STAGE_LOG, indent=2))
     print(f"\\n[{name}] {record['seconds']} s | peak child RSS {record['peak_child_rss_mib']} MiB | peak GPU in use {record['peak_gpu_used_mib']} MiB | "
           f"lowest host memory available {record['min_host_available_mib']} MiB | disk free {record['disk_free_gb_after']} GB")
+    if proc.returncode == 2 and refusal:  # sdi_core.run_main: a ContractError prints one CONTRACT FAILURE line and exits 2
+        raise StageRefused(name, refusal)
     if proc.returncode != 0:
+        if refusal:
+            print(f'CONTRACT FAILURE: {refusal}')
         raise RuntimeError(f"stage '{name}' failed with exit code {proc.returncode}. Read the last lines above, then see Troubleshooting in Section 13.")
     return record
 
@@ -503,11 +551,15 @@ def show(name, width=None):
 S2_INTRO = """
 ## 2 · The dataset: acquisition, audit and a frozen grouped split  <sub>(data practice)</sub>
 
-**Dataset card.** The Bosch Surface Defect Inspection (SDI) dataset (source repository pinned at commit `c6e0afe6…`) contains grayscale photographs of three products (A, B, C), each labelled `normal`, `scratches` or `spots`. It was released with the DT-GAN study (Wang et al., 2023); this notebook is a new experiment, not a reproduction of that paper's results. The repository declares **CC BY-SA 4.0**: attribution is required and adapted dataset material you redistribute must carry the same licence. The dataset's licence does not automatically apply to the notebook code, the models, or generated images; Section 12 records each separately.
+### Data context
+
+**Dataset card.** The Bosch Surface Defect Inspection (SDI) dataset ([source repository](https://github.com/boschresearch/The-Surface-Defect-Inspection-Dataset/tree/c6e0afe66e9dbd9d99326c986ea884ddf2aad9f8), pinned at commit `c6e0afe6…`) contains grayscale photographs of three products (A, B, C), each labelled `normal`, `scratches` or `spots`. It was released with the DT-GAN study, which the dataset's maintainers ask users to cite as its BMVC 2022 paper (Wang et al., 2022); this notebook is a new experiment, not a reproduction of that paper's results. The repository declares **CC BY-SA 4.0** ([licence](https://creativecommons.org/licenses/by-sa/4.0/)): attribution is required and adapted dataset material you redistribute must carry the same licence. The dataset's licence does not automatically apply to the notebook code, the models, or generated images; Section 12 records each separately.
 
 **Acquisition.** The archive is a 1,647,097,112-byte Git LFS object. The data stage streams it with timeouts, resumes on interruption, verifies its byte count and SHA-256 before extraction, and refuses path traversal, symlinks, non-image files and anything beyond an expanded-size ceiling set from the inspected archive. It never substitutes another dataset.
 
 **Audit and split.** Before any model sees an image, the stage inventories every file, compares the counts with the published notes (documented counts are expectations, measured counts are facts), finds exact decoded-pixel duplicates and near duplicates, and forms groups. Groups, not images, are assigned to train / validation / test (60/20/20, approximately class-stratified, deterministic). The source supplies no specimen or session identifiers, so groups approximate shared capture and this is an **exploratory image-group benchmark**, not a claim about independent physical specimens. Only product A is used. From the training partition, a fixed budget of 128 normal, 64 scratch and 32 spot images is selected (one per group); the rest of the training partition stays unused.
+
+**Why not the source's own split.** The source's official split (its train / val / test folders) is not used, for two reasons. It covers only the defect images: normal images have no official split, so a three-class split cannot be taken from it. And it does not keep duplicates together: pixel-identical copies sit in different official partitions (see *What to notice* below). This notebook therefore assigns whole groups to its own partitions, and the printout maps each official assignment to the new one. An image id such as `A_sp_test_00011` keeps the source's folder name, so `_test_`, `_val_` or `_train_` in an id records the source's original assignment, not this notebook's partition.
 
 **Question for this stage:** do the measured counts match the documentation, and could the same picture end up in both training and test?
 """
@@ -552,7 +604,7 @@ S2_CHECK = checkpoint(
 S3_INTRO = """
 ## 3 · Baselines first: majority class and a real-only classifier  <sub>(core concept)</sub>
 
-Before any generated image exists, it is worth knowing what "good" looks like. The feature stage turns each selected training image into a 512-number vector with a frozen ImageNet ResNet-18 (He et al., 2016), plus four fixed augmented views of each image for the conventional arm; validation images get one deterministic vector each. Preprocessing is the same everywhere: grayscale, letterbox to 224 × 224 without cropping, replicate to three channels, ImageNet normalisation.
+Before any generated image exists, it is worth knowing what "good" looks like. The feature stage turns each selected training image into a 512-number vector with a frozen ImageNet ResNet-18 (He et al., 2016; weights `timm/resnet18.tv_in1k`, BSD-3-Clause), plus four fixed augmented views of each image for the conventional arm; validation images get one deterministic vector each. Preprocessing is the same everywhere: grayscale, letterbox to 224 × 224 without cropping, replicate to three channels, ImageNet normalisation.
 
 Then a **preview** fits the linear head for arm A only (real images, no augmentation) and scores it on **validation**. The majority baseline always predicts `normal`.
 
@@ -603,6 +655,8 @@ table(['class', '#', 'image', 'tokens', 'stop reason', 'description'], [[r['labe
 
 S4_NOTICE = """
 **What to notice.** Read each description and sort its claims into three bins: *observed* (a line, a bright blob, horizontal banding, even lighting), *inferred but plausible* (a "scratch" where a thin bright line is visible), and *guessed* (a material, a process, a cause, a severity). Descriptions of `normal` images sometimes report a mark, and defect descriptions sometimes miss one; the model was not told the label. The `stop reason` column says how each description ended: `end_of_sequence` means the model finished; `max_new_tokens` means it was cut off at the 96-token limit (a description can use all 96 tokens and still end on its own, so the token count alone does not show truncation). Greedy decoding makes the text repeatable for the same model and inputs, not correct.
+
+**About the `_test_` ids.** In the Bosch run, two spot exemplars are `A_sp_test_00011` and `A_sp_test_00019`. The `_test_` is the source's folder name (Section 2), not this notebook's partition: both are in this notebook's **training** partition. Exemplars are drawn only from the selected training images, the data stage refuses any split in which a group crosses partitions, and the Phi-4 stage itself refuses to describe an image that is not a selected training image. No validation or test image of this experiment reaches Phi-4.
 """
 
 S4_CHECK = checkpoint(
@@ -696,7 +750,9 @@ This is the controlled comparison. For each seed (17, 29, 43), `slot_schedule` (
 - **B** uses one of the real image's four fixed augmented views;
 - **C** does the same as B, except that a **defect** slot whose coin is below 0.5 uses a synthetic candidate's view instead. Normal slots are always real.
 
-So every arm sees the same number of updates, the same class balance and the same head initialisation per seed. C does not get more training; it gets a different distribution of defect examples. The head is fitted with AdamW (learning rate 0.001, weight decay 0.0001), batch 32, on the CPU with deterministic algorithms. After each epoch it is scored on **validation**; the epoch with the highest validation macro-F1 is kept (the earlier epoch wins a tie). Among the arms fitted with the canonical seed 17, the one with the highest validation macro-F1 is chosen for export (ties go to A, then B, then C).
+So every arm sees the same number of updates, the same class balance and the same head initialisation per seed. C does not get more training; it gets a different distribution of defect examples. The head is fitted with AdamW (learning rate 0.001, weight decay 0.0001), batch 32, on the CPU with deterministic algorithms.
+
+**A fixed, untuned shared recipe.** These settings (AdamW at learning rate 0.001, 30 epochs, synthetic probability 0.5) were set in advance and are shared by every arm; they were not tuned per arm, and no arm got a search over them. Only the kept epoch is chosen per arm and seed, on validation (in the recorded run, for example, C with seed 29 kept epoch 2 of 30). The comparison therefore asks which training source does better *under this one recipe*, not which is best when each is tuned. After each epoch it is scored on **validation**; the epoch with the highest validation macro-F1 is kept (the earlier epoch wins a tie). Among the arms fitted with the canonical seed 17, the one with the highest validation macro-F1 is chosen for export (ties go to A, then B, then C).
 
 Then the experiment is **frozen**: `experiment_config.json` records every setting and the SHA-256 of every input (split, prompts, generation manifest, features, heads, the thumbnail signatures used by the overlap audit) and of the code that defines preprocessing, fitting, evaluation and export (the shared core and every stage script). The test, export and reload stages refuse to run if any of them changes, and every held-out image is re-checked against its recorded digests before it is scored.
 
@@ -719,7 +775,7 @@ S8_NOTICE = """
 
 S8_CHECK = checkpoint(
     "Why not simply add the 64 synthetic images to the training set of arm B and train for the same number of epochs?",
-    "Adding images changes several things at once: the number of defect examples, the class balance, and (with a fixed number of epochs) the number of updates. Any difference in the result could come from any of these. Substituting synthetic images into a fixed slot schedule keeps updates, batch composition, class prior and random draws identical, so a difference between C and B can be attributed to the change in the defect-image distribution.",
+    "Adding images changes several things at once: the number of defect examples, the class balance, and (with a fixed number of epochs) the number of updates. Any difference in the result could come from any of these. Substituting synthetic images into a fixed slot schedule keeps updates, batch composition, class prior and random draws identical, so a difference between C and B can be attributed to the change in the defect-image distribution, under this fixed recipe. That says where a difference comes from, not what it consists of: Section 10 shows which classes and which kinds of errors changed.",
 )
 
 S9_INTRO = """
@@ -740,6 +796,8 @@ S9_RUN = """
 run_stage('evaluate', 'lab', 'stage_evaluate.py')
 METRICS = load('metrics.json')
 print('test counts:', METRICS['test_counts'], '| comparison valid:', METRICS['comparison_valid'], METRICS['validity_note'])
+if not METRICS['comparison_valid']:
+    print('INVALID COMPARISON - not evidence: a held-out overlap was found after freezing. The numbers below are shown for the record only, without a verdict.')
 rows = []
 for arm, summ in METRICS['summary'].items():
     rows.append([METRICS['arms'][arm], *[fmt(summ['macro_f1']['per_seed'][str(s)]) for s in RECORD['seeds']], fmt(summ['macro_f1']['mean']),
@@ -747,7 +805,10 @@ for arm, summ in METRICS['summary'].items():
 table(['arm', *[f'macro-F1 seed {s}' for s in RECORD['seeds']], 'mean', 'range', 'balanced acc. (mean)', 'accuracy (mean)'], rows)
 for name, c in METRICS['contrasts'].items():
     lo, hi = c['interval_95']
-    verdict = 'the interval includes zero: no clear difference in this run' if lo <= 0 <= hi else ('the interval is above zero' if lo > 0 else 'the interval is below zero')
+    if not METRICS['comparison_valid']:
+        verdict = 'INVALID - not evidence, no verdict'
+    else:
+        verdict = 'the interval includes zero: no clear difference in this run' if lo <= 0 <= hi else ('the interval is above zero' if lo > 0 else 'the interval is below zero')
     print(f"{name}: mean difference {c['mean_difference']:+.4f} (per seed {', '.join(f'{v:+.4f}' for v in c['per_seed'].values())}); "
           f"approximate 95% interval [{lo:+.4f}, {hi:+.4f}] -> {verdict}")
 show('macro_f1_by_arm.png')
@@ -755,7 +816,7 @@ show('confusion_matrices.png')
 """
 
 S9_NOTICE = """
-**What to notice.** Read the per-seed columns before the mean: if the sign of C − B changes between seeds, the mean hides disagreement. Compare the interval's width with the difference itself. The interval is **conditional on this split and this generated pool**: it reflects which test groups happened to be drawn, not what would happen with a different split, a new set of 64 generated images or another factory. In the confusion matrices, look at where each arm's errors go: false alarms on `normal`, missed defects, or scratch/spot confusion.
+**What to notice.** Read the per-seed columns before the mean: if the sign of C − B changes between seeds, the mean hides disagreement. Compare the interval's width with the difference itself. The interval is **conditional on this split and this generated pool**: it reflects which test groups happened to be drawn, not what would happen with a different split, a new set of 64 generated images or another factory. In the confusion matrices, look at where each arm's errors go: false alarms on `normal`, missed defects, or scratch/spot confusion. An interval above zero says that macro-F1 differs on this split; it does not say what the difference consists of. Section 10 takes it apart.
 """
 
 S9_CHECK = checkpoint(
@@ -780,6 +841,35 @@ for arm in METRICS['per_run']:
 table(['arm (canonical seed)', 'class', 'precision', 'recall', 'F1', 'support', 'predicted'], rows)
 undefined = {a: r[str(RECORD['selection']['seed'])]['undefined'] for a, r in METRICS['per_run'].items() if r[str(RECORD['selection']['seed'])]['undefined']}
 print('undefined metrics (no predictions of that class):', undefined or 'none')
+if 'B' in METRICS['per_run'] and 'C' in METRICS['per_run']:
+    seed = str(RECORD['selection']['seed'])
+    pb, pc = METRICS['per_run']['B'][seed]['per_class'], METRICS['per_run']['C'][seed]['per_class']
+    print(f'C beside B, canonical seed {seed} (C / B):')
+    for c in order:
+        print(f"    {c:<10} recall {fmt(pc[c]['recall'])} / {fmt(pb[c]['recall'])} | precision {fmt(pc[c]['precision'])} / {fmt(pb[c]['precision'])} | predicted {pc[c]['predicted']} / {pb[c]['predicted']} | test images {pc[c]['support']}")
+    ba = {a: METRICS['summary'][a]['balanced_accuracy'] for a in ('B', 'C')}
+    print(f"test balanced accuracy (C / B): mean {fmt(ba['C']['mean'])} / {fmt(ba['B']['mean'])}; per seed "
+          + ', '.join(f"{s}: {fmt(ba['C']['per_seed'][s])} / {fmt(ba['B']['per_seed'][s])}" for s in ba['C']['per_seed']))
+"""
+
+S10_INTERPRET = f"""
+### Reading C − B: where did the macro-F1 difference come from?
+
+Macro-F1 averages the F1 of the three classes, and each F1 combines precision and recall. Under the argmax rule there is no tuned threshold, so macro-F1 can rise in two quite different ways: the classifier **finds more defects** (defect recall rises), or it **makes fewer defect calls**, so fewer normal surfaces are flagged (defect precision rises) while the defects it finds stay the same. For inspection these are not equally valuable: as Section 3 put it, missing defects is the failure an inspection system cannot afford.
+
+Before you accept "C beats B", read three things printed above for B and C:
+
+1. **Per-class recall** of each defect class: did C find more scratches or spots than B?
+2. **Per-class precision and the `predicted` column**: did C simply call fewer images defective?
+3. **Balanced accuracy** (the mean of per-class recall; Section 9 table and the line above): if C − B is clearly positive in macro-F1 but near zero in balanced accuracy, the gain is mostly precision at this decision rule, not better detection.
+
+Keep three claim levels apart:
+
+- **Signal:** the generated pool changed what the classifier learned (a consistent difference on every seed shows this).
+- **Comparator:** C beats B *under macro-F1, at the argmax rule, on this split, this generated pool and this fixed, untuned shared recipe*. This is what the interval tests.
+- **Operational usefulness:** C would make a better inspection system. This run cannot show it: no threshold was chosen for a target defect recall, the scores are not calibrated, and there is one product and one split.
+
+{checkpoint("In the recorded Bosch run, C − B is +0.044 in test macro-F1 with an interval above zero. Using the per-class lines above, what changed between B and C, and what did not?", "These numbers are quoted from the recorded Colab CLI run of revision `439c34f` (notebook blob `84061cc7`, 2026-10-04). They were not re-run for this revision, whose stage code is unchanged; compare them with what your run printed. Spot recall was 0.714 (15 of 21 spots) in A, B and C alike. Scratch recall rose from 0.881 to 0.910, two more of 67 scratches. What changed most was the number of defect calls: C predicted `spots` 59 times against B's 78, so spot precision rose from 0.192 to 0.254, and `normal` recall rose from 0.917 to 0.935. Mean test balanced accuracy was C 0.833 against B 0.837 (A 0.830), and on validation C's balanced accuracy was below B's for seeds 17 and 29 (0.786 against 0.805, and 0.756 against 0.783) although its validation macro-F1 was higher. So most of the macro-F1 gain is fewer false defect calls at the argmax rule, not more defects found. The result supports the signal and comparator levels, conditionally; it does not show better defect detection, and it does not test operational usefulness.")}
 """
 
 S10_NOTICE = f"""
@@ -792,13 +882,28 @@ S10_NOTICE = f"""
 Complete these sentences in your own words, using only numbers printed above:
 
 1. **Task:** *On product A of the Bosch SDI dataset (or: on my own dataset, described by its source and classes), with 128 / 64 / 32 real training images and a frozen ResNet-18 with a linear head, we compared …*
-2. **Principal result:** *Mean test macro-F1 was … for A, … for B and … for C; C − B was … (approximate 95% interval …), with per-seed differences of …*
+2. **Principal result:** *Mean test macro-F1 was … for A, … for B and … for C; C − B was … (approximate 95% interval …), with per-seed differences of …; mean balanced accuracy was … for B and … for C, and defect recall …*
 3. **Baseline / reference:** *The majority baseline scored accuracy … but macro-F1 …*
 4. **Important failure mode or uncertainty:** *Most remaining errors were …; the spot class rests on … test images; …*
 5. **Limitations:** *One grouped split of one product without specimen metadata; one generated pool with intended, unverified labels; frozen models in 4-bit; no calibration; …*
 6. **What would change my mind:** *…*
 
 Your prediction from the start: was it right? What in the evidence would have to differ for the opposite conclusion?
+"""
+
+S10_ANSWER = """
+### What this run shows: a bounded answer to the title question
+
+*Can synthetic defects improve visual inspection?* The answer below is for the recorded Bosch run: the Colab CLI run of revision `439c34f` (notebook blob `84061cc7`, fresh Colab T4, 2026-10-04). Its numbers are quoted from that run and were not re-run for this revision, whose stage code is unchanged. Write your own conclusion first. If your run printed different numbers, or you used your own data, answer from your own output with the same claim levels.
+
+| Claim | Evidence in the recorded run | Level |
+|---|---|---|
+| The generated pool changed what the classifier learned | test macro-F1 C − B positive on every seed (+0.0415, +0.0559, +0.0355) | supported (signal) |
+| Synthetic substitution beats conventional augmentation under the pre-declared primary metric | mean C − B +0.0443 in test macro-F1, approximate 95% interval [+0.0193, +0.0671]; one split, one generated pool, one fixed, untuned shared recipe | supported on this split and pool (comparator) |
+| Synthetic substitution finds more defects | spot recall 15 of 21 in A, B and C; scratch recall 61 against 59 of 67; mean test balanced accuracy C 0.833 against B 0.837 | not supported |
+| Synthetic defects improve visual inspection in practice | no operating threshold for a target recall, no calibration, one product, image groups rather than physical specimens | not tested (operational) |
+
+**Answer.** In this run, substituting FLUX-generated defects into training raised test macro-F1 over conventional augmentation, mainly because the classifier made fewer false defect calls at the argmax rule (C predicted `spots` 59 times against B's 78), not because it found more defects. That is evidence that the generated pool changes the classifier, and a conditional win under the chosen metric on this split and pool. It is not evidence that synthetic defects improve inspection, where a missed defect is the costly error. A fairer next test would compare the arms at a matched defect recall or with a threshold-free metric, on independently generated pools and another product (Section 13.5).
 """
 
 S11_INTRO = """
@@ -886,9 +991,9 @@ if not METRICS['comparison_valid']:
     limitations.append('- ' + METRICS['validity_note'])
 (OUT / 'limitations.md').write_text('\n'.join(limitations) + '\n')
 if DATA_SOURCE == 'bosch':
-    dataset_terms = ('`split_manifest.csv` and the figures that show dataset images are adapted dataset material: if you redistribute them, credit the source above and apply CC BY-SA 4.0.\n\n'
-                     'Cite the dataset\'s accompanying paper: Wang, R., Hoppe, S., Monari, E., & Huber, M. F. (2023). Defect Transfer GAN: Diverse defect synthesis for data augmentation. https://doi.org/10.48550/arXiv.2302.08366')
-    dataset_row = '| Dataset | Bosch Surface Defect Inspection dataset, https://github.com/boschresearch/The-Surface-Defect-Inspection-Dataset at commit c6e0afe66e9dbd9d99326c986ea884ddf2aad9f8, archive SHA-256 d33ea340151cdf909f3807a37e00d335c66eb8960b0c2eb568fd9fc75d96fa7c | CC BY-SA 4.0 (attribution; share-alike for adapted material) |'
+    dataset_terms = ('`split_manifest.csv` and the figures that show dataset images are adapted dataset material: if you redistribute them, credit the source above and apply CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/).\n\n'
+                     'Cite the dataset as its maintainers ask, as the BMVC 2022 paper: Wang, R., Hoppe, S., Monari, E., & Huber, M. F. (2022). Defect Transfer GAN: Diverse defect synthesis for data augmentation. British Machine Vision Conference (BMVC 2022). https://api.semanticscholar.org/CorpusID:256900681 (preprint: https://doi.org/10.48550/arXiv.2302.08366)')
+    dataset_row = '| Dataset | Bosch Surface Defect Inspection dataset, https://github.com/boschresearch/The-Surface-Defect-Inspection-Dataset at commit c6e0afe66e9dbd9d99326c986ea884ddf2aad9f8, archive SHA-256 d33ea340151cdf909f3807a37e00d335c66eb8960b0c2eb568fd9fc75d96fa7c | CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/ (attribution; share-alike for adapted material) |'
 else:
     dataset_terms = ('The dataset was supplied by the user. Its terms are set by its owner and are not determined by this notebook; `split_manifest.csv` and the figures '
                      'that show its images carry those terms. No Bosch dataset material was used in this run.')
@@ -917,9 +1022,10 @@ print('=' * 100)
 print(f"DATA        {DATA_SOURCE}: split {DATA['split']['manifest_sha256'][:12]}... (reference match: {DATA['split']['matches_reference']}), budget {DATA['selected']}")
 print(f"PROMPTS     {summary['phi4_guided_prompts']} of {len(PROMPTS)} Phi-4-guided | GENERATION usable {STATUS['usable']} complete={STATUS['complete']}")
 print('TEST MACRO-F1 (mean over seeds) ' + ', '.join(f'{a}={v:.4f}' for a, v in summary['test_macro_f1_mean'].items()))
-for name, c in METRICS['contrasts'].items():
-    print(f"CONTRAST    {name}: {c['mean_difference']:+.4f}, approx. 95% interval [{c['interval_95'][0]:+.4f}, {c['interval_95'][1]:+.4f}]")
 print(f"VALIDITY    comparison valid: {METRICS['comparison_valid']} | smoke run: {RECORD['smoke_run']}")
+for name, c in METRICS['contrasts'].items():
+    label = '' if METRICS['comparison_valid'] else ' (INVALID - not evidence)'
+    print(f"CONTRAST    {name}{label}: {c['mean_difference']:+.4f}, approx. 95% interval [{c['interval_95'][0]:+.4f}, {c['interval_95'][1]:+.4f}]")
 print(f"EXPORT      arm {RECORD['selection']['arm']} seed {RECORD['selection']['seed']} | reload parity {PARITY['passed']} (max diff {PARITY['max_abs_logit_difference']:.1e}, same decisions {PARITY['same_predictions']}) | new-image inference {PARITY['new_image_inference']['status']}")
 print(f"RESOURCES   model stages {summary['model_time_seconds_excluding_installs']} s; wall {summary['wall_seconds_since_configuration']} s; "
       f"peak GPU in use {max(r['peak_gpu_used_mib'] for r in STAGE_LOG.values())} MiB; peak child RSS {max(r['peak_child_rss_mib'] for r in STAGE_LOG.values())} MiB; "
@@ -1007,13 +1113,13 @@ S13_TROUBLE = """
 | `hash mismatch` / `uv wheel ... SHA-256` | a substituted or truncated download | re-run the environment cell; never remove `--require-hashes` or the uv pin |
 | `Linux x86_64 only` | macOS, Windows or ARM runtime | use Colab, Kaggle or a Linux x86_64 Jupyter host |
 | `download ... did not complete` | the dataset host timed out | re-run the data cell; completed bytes are resumed. A timeout is an access problem, not evidence of corrupt data |
-| `CONTRACT FAILURE: ... digest` | a corrupted or substituted file | delete the named file under `work/sdi_capstone/` and re-run; never skip the check |
+| `REFUSED  stage '...': ... digest` | a corrupted or substituted file | delete the named file under `work/sdi_capstone/` and re-run; never skip the check |
 | exit code -9 or "Killed" during a model load | host memory exhausted | note `lowest host memory available` from the stage log; use a high-RAM runtime; the notebook does not silently change precision or sizes |
 | CUDA out of memory | another process holds GPU memory | Runtime → Restart session, then Run all |
 | `generation shortfall` | fewer than 24 usable candidates in a class | a reportable result: the synthetic comparison is not presented. Do not increase the sample count to get past it |
 | `frozen input ... changed` | a file changed after freezing | re-run from Section 8; do not edit outputs by hand |
 | `reload parity ... FAIL` | the artifact or backbone file differs | re-run Section 11; if it persists, the export is not trustworthy |
-| BYOD `CONTRACT FAILURE` | the manifest or images break the contract | the message names the line, column, class, group or limit; fix the zip and use the BYOD check cell |
+| BYOD `REFUSED  stage 'data': ...` (Run all stops there, with no traceback) | the manifest or images break the contract | the message names the line, column, class, group or limit; fix the zip, check it with the BYOD check cell, then Run all again |
 | HF warning about `HF_TOKEN` | unauthenticated downloads | harmless: every model used here is ungated, and the notebook removes tokens from child processes |
 
 ### 13.5 Further exploration
@@ -1033,7 +1139,7 @@ This notebook's code and text were developed with generative AI assistance for c
 
 Abouelenin, A., Ashfaq, A., Atkinson, A., Awadalla, H., Bach, N., et al. (2025). *Phi-4-Mini technical report: Compact yet powerful multimodal language models via mixture-of-LoRAs*. arXiv. https://doi.org/10.48550/arXiv.2503.01743
 
-Black Forest Labs. (2024). *FLUX.1 [schnell]* [Model card]. Hugging Face. https://huggingface.co/black-forest-labs/FLUX.1-schnell
+Black Forest Labs. (2024). *FLUX.1 [schnell]* [Model card, revision 741f7c3c]. Hugging Face. https://huggingface.co/black-forest-labs/FLUX.1-schnell/blob/741f7c3ce8b383c54771c7003378a50191e9efe9/README.md
 
 Deng, J., Dong, W., Socher, R., Li, L.-J., Li, K., & Fei-Fei, L. (2009). ImageNet: A large-scale hierarchical image database. In *2009 IEEE Conference on Computer Vision and Pattern Recognition* (pp. 248–255). https://doi.org/10.1109/CVPR.2009.5206848
 
@@ -1047,7 +1153,7 @@ Sokolova, M., & Lapalme, G. (2009). A systematic analysis of performance measure
 
 Trabucco, B., Doherty, K., Gurinas, M., & Salakhutdinov, R. (2023). *Effective data augmentation with diffusion models*. arXiv. https://doi.org/10.48550/arXiv.2302.07944
 
-Wang, R., Hoppe, S., Monari, E., & Huber, M. F. (2023). *Defect Transfer GAN: Diverse defect synthesis for data augmentation*. arXiv. https://doi.org/10.48550/arXiv.2302.08366
+Wang, R., Hoppe, S., Monari, E., & Huber, M. F. (2022). Defect Transfer GAN: Diverse defect synthesis for data augmentation. In *British Machine Vision Conference (BMVC 2022)*. https://api.semanticscholar.org/CorpusID:256900681 (preprint: https://doi.org/10.48550/arXiv.2302.08366)
 """
 
 SCRIPT_NOTES = {
@@ -1105,7 +1211,7 @@ def build() -> dict:
     cells += script_cells("stage_evaluate.py") + script_cells("stage_export.py") + script_cells("stage_reload.py")
     cells += [code(S8_RUN), md(S8_NOTICE), md(S8_CHECK), md(S9_INTRO)]
     cells.append(code(S9_RUN))
-    cells += [md(S9_NOTICE), md(S9_CHECK), md(S10_INTRO), code(S10_RUN), md(S10_NOTICE), md(S11_INTRO)]
+    cells += [md(S9_NOTICE), md(S9_CHECK), md(S10_INTRO), code(S10_RUN), md(S10_INTERPRET), md(S10_NOTICE), md(S10_ANSWER), md(S11_INTRO)]
     cells.append(code(S11_RUN))
     cells += [md(S11_NOTICE), md(S11_CHECK), md(S12_INTRO), code(S12_RUN, form=True), md(S13_INTRO), code(S13_EXERCISE), md(S13_REVIEW), code(S13_REVIEW_RUN), md(S13_BYOD), code(S13_BYOD_RUN), md(S13_TROUBLE), md(DISCLOSURE)]
     for n, cell in enumerate(cells):
@@ -1121,6 +1227,9 @@ def build() -> dict:
             "language_info": {"name": "python"},
             "dimer": {
                 "notebook_spec": "2.2",
+                "notebook_profile": "E2E",
+                "notebook_mode": "GUIDED",
+                "notebook_kind": "CAPSTONE",
                 "profile": "E2E",
                 "pedagogical_mode": "GUIDED",
                 "standalone": True,
@@ -1128,6 +1237,7 @@ def build() -> dict:
                 "capability": "controlled comparison of synthetic (Phi-4 described, FLUX generated) versus conventional augmentation for a frozen-feature defect classifier on the Bosch SDI dataset",
                 "generated_from": {"generator": GENERATOR, "repository": REPO, "sources": sources},
                 "revisions": REVISIONS,
+                "kept_deviations": KEPT_DEVIATIONS,
             },
         },
         "nbformat": 4,

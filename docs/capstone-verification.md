@@ -9,7 +9,7 @@
 
 ## What CI cannot cover
 
-Phi-4 and FLUX need a CUDA GPU with `bitsandbytes`, about 45 GB of weights and the two locked environments, so the model stages run only in a hosted runtime. The combined run on one T4 (including host-memory fit and time) has not yet been measured.
+Phi-4 and FLUX need a CUDA GPU with `bitsandbytes`, about 45 GB of weights and the two locked environments, so the model stages run only in a hosted runtime. The combined run on one T4 (host-memory fit and time) was measured by the hosted runs recorded below; CI never measures it.
 
 ## Pre-release evidence gathered while writing the notebook (not a notebook run)
 
@@ -49,6 +49,22 @@ Notebook blob `c64f21cc` (passed on Colab T4 at `9eae6c6`, recorded below) → `
 - `PYTHONPATH`, `PYTHONHOME` and `PYTHONSTARTUP` are dropped from the environment of uv and of every stage process.
 - The stage scripts and the shared core are unchanged byte for byte, so the default results are expected to match the 2026-09-29 run (for example, mean test macro-F1 for C − B +0.0443). Differences we expect: the environment build times, and the isolated interpreter's patch version.
 - User-visible: the notebook runs on Linux x86_64 only (Colab, Kaggle, Linux Jupyter), and it refuses other hosts with a message.
+
+## 2026-10-12 review BSA2 (findings BSA2-M1, BSA2-m1 to BSA2-m6)
+
+Notebook blob `84061cc7` → the blob on this branch. Status: **Candidate**. The new blob has no hosted run yet. A review of `b4b7a3e` (verdict: needs revision; 0 blockers, 1 major, 6 minor, 1 suggestion) found the default path sound and the interpretation of the headline result incomplete. All changes are in `tools/build_capstone_notebook.py`; `tools/capstone/` (every stage script, the shared core and both locks) is unchanged byte for byte, so the 22 `%%writefile` cells, the frozen `STAGE_SOURCES` and every computed number of the default path are unchanged. Four code cells change, for display and error presentation only: the stage runner, the test cell, the Section 10 cell and the records cell.
+
+| Finding | Change |
+|---|---|
+| BSA2-M1 (owner decision; option A applied provisionally) | Section 10 prints C beside B per class (recall, precision, predicted count) and test balanced accuracy, from values the run already computes; a guided *Reading C − B* cell explains that macro-F1 at the argmax rule can rise through fewer defect calls, names three claim levels (signal, comparator, operational usefulness) and has a sample answer quoting the recorded run; Section 8 labels the settings a fixed, untuned shared recipe; a closing *What this run shows* cell gives a bounded answer to the title question with the evidence level of each claim. No metric added; options B to D are listed in the pull request. |
+| BSA2-m1 | Status line and resource budget state the recorded 2026-10-04 Colab CLI T4 run of `439c34f` (2,106 s wall, 1,833 s model stages, peak GPU in use 11,529 MiB, lowest host memory available 8,909 MiB), labelled as not re-measured for this revision. |
+| BSA2-m2 | `notebook_kind = CAPSTONE`, `notebook_profile` and `notebook_mode` in `metadata.dimer` (the legacy `profile` / `pedagogical_mode` keys are kept); the canonical use notice with an industrial-inspection clause and the BYOD sentence before the first code cell; *Problem statement* and *Data context* headings; the data context links the source repository at `c6e0afe6`. Kept deviations, recorded in `metadata.dimer.kept_deviations`: the notebook still declares NOTEBOOK_SPEC 2.2, and references stay APA 7 with author-year citations (maintainer ruling for this review round). |
+| BSA2-m3 | The dataset is cited as its maintainers ask (BMVC 2022) in Section 2, References and the generated `ATTRIBUTION.md`; the CC BY-SA 4.0 licence URL is in the dataset card, the attribution row and the redistribution sentence; the FLUX reference links the model card at revision `741f7c3c`; the ResNet-18 weights' licence (BSD-3-Clause) is stated beside the backbone. |
+| BSA2-m4 | When `comparison_valid` is false, the test cell says so first and prints the contrasts with `INVALID - not evidence, no verdict`; the terminal summary prints `VALIDITY` before the `CONTRAST` lines and labels them invalid. |
+| BSA2-m5 | `run_stage` holds back a stage's `CONTRACT FAILURE` line; for exit code 2 it raises `StageRefused`, which IPython shows as two lines (the refused rule, and what to do) with no Python traceback, and Run all still stops there. Other exit codes still raise `RuntimeError`. The BYOD check cell prints one line. |
+| BSA2-m6 | Section 2 explains why the source's official split is not used (normal images have none; it separates pixel-identical copies) and that `_test_` / `_train_` in an id is the source's folder name; Section 4 says the two `A_sp_test_…` exemplars are in this notebook's training partition. Checked in source: exemplars are drawn only from selected training groups (`sdi_core.build_split_rows`), groups never cross partitions (`check_group_leakage`), and `stage_phi4.py` refuses an exemplar that is not a selected training image; the recorded run passed that check. Not leakage. |
+
+Not addressed: BSA2-S1 (suggestion). Evidence boundary: generator parity, unit tests with stand-ins for the child process, and the review's acceptance checks on the regenerated notebook; no hosted run of the new blob.
 
 ## Verification procedure
 
