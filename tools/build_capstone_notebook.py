@@ -46,6 +46,16 @@ REVISIONS = [
         "Stage code unchanged.",
         "previous_blob": "84061cc7dfdfe270cd75840c1d48d22d198d3fba",
     },
+    {
+        "date": "2026-10-13",
+        "change": "owner decisions BSA2-M1=C, CX3=B, CX4=A, CX6=A, CX7=A",
+        "summary": "Pre-declared co-primary comparison (test macro-F1 AND balanced accuracy, both paired group-bootstrap intervals "
+        "required) with macro AUPRC as a threshold-free secondary; mixed-class acquisition groups kept whole (split on "
+        "class-count vectors, bootstrap stratified by class set) and separated from exact-image label conflicts; minimum of 15 "
+        "held-out groups per class with verdicts withheld below it and a warning below 30; 16-bit/32-bit/float images refused; "
+        "Phi-4 exemplar bytes verified against the manifest. Stage code changed; previous hosted runs cover the previous design only.",
+        "previous_blob": "7a98b10e095031ccbed2ea13d3122e4fe9a52dc6",
+    },
 ]
 KEPT_DEVIATIONS = [
     {"spec_ids": ["3.4 notebook_spec"], "kept": "declares NOTEBOOK_SPEC 2.2, not 2.5", "reason": "maintainer ruling for the 2026-10-12 capstone round: the 2.4/2.5 write-up and kind layer is adopted without re-declaring the spec version"},
@@ -96,7 +106,7 @@ def checkpoint(question: str, answer: str) -> str:
 OPENING = f"""
 # DIMER Guided Notebook: Can Synthetic Defects Improve Visual Inspection?
 
-**Profile:** `E2E` · **Mode:** `GUIDED` · **Kind:** `CAPSTONE` · **Notebook spec:** DIMER Notebook Specification 2.2 · **Status:** candidate. The default path passed a recorded Colab CLI run on a fresh Colab T4 (revision `439c34f`, notebook blob `84061cc7`, 2026-10-04). This revision changes text, display and error-presentation code only (the stage code is unchanged) and has not had its own hosted run; the bring-your-own-data path has no hosted run yet.
+**Profile:** `E2E` · **Mode:** `GUIDED` · **Kind:** `CAPSTONE` · **Notebook spec:** DIMER Notebook Specification 2.2 · **Status:** candidate. Earlier revisions passed recorded Colab CLI runs on a fresh Colab T4 (revision `439c34f`, notebook blob `84061cc7`, 2026-10-04; revision `802ce28`, blob `7a98b10e`, 2026-10-12). This revision redesigns the primary comparison and changes stage code (evaluation, grouping and input checks), so those runs cover the previous design only; this revision has not had its own hosted run, and the bring-your-own-data path has no hosted run yet.
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)]({COLAB})
 
@@ -114,7 +124,7 @@ Success means a reproducible, interpretable comparison. A negative or null resul
 
 **By the end of this notebook you will be able to:**
 
-- **explain** why accuracy misleads under class imbalance and **compare** classifiers with macro-F1;
+- **explain** why accuracy misleads under class imbalance and **compare** classifiers with macro-F1 and balanced accuracy, and why a pre-declared rule needs both;
 - **identify** which parts of a model-written description are observed and which are guessed;
 - **distinguish** a generated image's *intended* label from a verified annotation, and visual plausibility from measured usefulness;
 - **diagnose** leakage risks: duplicate images across partitions, test-set peeking, and unequal training budgets;
@@ -144,7 +154,7 @@ AUDIENCE = """
 
 **Runtime.** A Colab **T4 GPU** runtime (Runtime → Change runtime type → T4 GPU) with at least 15 GB of GPU memory, on Linux x86_64 (Colab, Kaggle or Linux Jupyter; the isolated environments use Linux wheels). The runtime check in Section 1 stops with an instruction if no suitable GPU is attached.
 
-**Resource budget.** Measured on the recorded Colab CLI run of revision `439c34f` (notebook blob `84061cc7`) on a fresh Colab T4 (15,360 MiB GPU, 12.7 GiB host RAM), 2026-10-04: 2,106 s (35 min) session wall time, of which 1,833 s in the model stages; peak GPU memory in use 11,529 MiB; lowest available host memory 8,909 MiB (during the FLUX stage). These figures come from that run and were not re-measured for this revision, whose stage code is unchanged. Estimates, not measured by that run: about 53 GB of downloads (dataset 1.6 GB, Phi-4 11.2 GB, FLUX 33.7 GB, ResNet-18 0.05 GB, Python wheels about 6 GB) and about 55 GB of free disk with the default of deleting each model's weights after use. The notebook measures and records your run's download bytes, stage times, peak host memory and peak GPU memory.
+**Resource budget.** Measured on the recorded Colab CLI run of revision `439c34f` (notebook blob `84061cc7`) on a fresh Colab T4 (15,360 MiB GPU, 12.7 GiB host RAM), 2026-10-04: 2,106 s (35 min) session wall time, of which 1,833 s in the model stages; peak GPU memory in use 11,529 MiB; lowest available host memory 8,909 MiB (during the FLUX stage). These figures come from that run and were not re-measured for this revision; its stage changes (evaluation metrics, grouping, input checks) are not expected to change resource use much, but that is not measured. Estimates, not measured by that run: about 53 GB of downloads (dataset 1.6 GB, Phi-4 11.2 GB, FLUX 33.7 GB, ResNet-18 0.05 GB, Python wheels about 6 GB) and about 55 GB of free disk with the default of deleting each model's weights after use. The notebook measures and records your run's download bytes, stage times, peak host memory and peak GPU memory.
 
 ### How to use this notebook
 
@@ -184,7 +194,7 @@ ROADMAP = """
 QUESTION = """
 ## The question, and your prediction
 
-> Under a fixed real-data budget, classifier, class-sampling policy and training budget, does substituting synthetic defect examples into training improve **real-test macro-F1** compared with conventional augmentation?
+> Under a fixed real-data budget, classifier, class-sampling policy and training budget, does substituting synthetic defect examples into training improve **both real-test macro-F1 and real-test balanced accuracy** compared with conventional augmentation?
 
 The experiment trains a small classifier on top of frozen image features in three **arms**, each with the same number of optimiser updates, the same batch composition and the same random draws per seed:
 
@@ -195,7 +205,9 @@ The experiment trains a small classifier on top of frozen image features in thre
 | **B** conventional augmentation | the same real images, each drawn as one of four fixed flip/brightness/contrast views | primary practical comparator |
 | **C** synthetic augmentation | as B, but each defect slot draws a generated image with probability 0.5 | tests the generated pool |
 
-The **primary contrast is C − B**; B − A is context. Macro-F1 at the argmax decision rule is the pre-declared primary metric; balanced accuracy and per-class precision and recall are read beside it in Section 10, because macro-F1 can rise for more than one reason.
+The **primary contrast is C − B**; B − A is context.
+
+**The pre-declared rule (co-primary).** Two metrics are primary, both at the argmax decision rule: test **macro-F1** and test **balanced accuracy** (the mean of per-class recall). C is reported better than B only if the paired 95% group-bootstrap intervals of **both** contrasts (mean over seeds) lie above zero, worse only if both lie below zero; anything else is *no co-primary claim*. Requiring both is an intersection-union rule, so no multiplicity correction is applied. **Why this design.** Macro-F1 at the argmax rule can rise when a classifier simply makes fewer defect calls (its defect precision rises while it finds no more defects); balanced accuracy cannot rise that way, because it weights every class's recall equally. A rule that needs both cannot be met by a precision-only shift. It adds no tuned threshold, no recall target and no extra selection step. Matched-recall operating points were considered and not used: they need a recall target and per-arm thresholds chosen on about 21 validation spot images, which would make the primary result depend on a few borderline images. **Secondary, threshold-free:** macro **AUPRC** (the mean over classes of one-vs-rest average precision from the softmax scores), with the same paired bootstrap; it says whether C ranks images better at any threshold. **Unchanged:** epochs and the exported arm are still selected on validation macro-F1. **Support:** inferential verdicts are withheld when validation or test holds fewer than 15 independent groups of any class (Section 9).
 
 **Make a prediction now, before any model runs.** Write down (1) whether C − B will be positive, zero or negative, (2) roughly how large, and (3) which class you expect synthetic images to help most. You will compare against the evidence in Section 10.
 
@@ -220,7 +232,8 @@ Output: per-image predictions, macro-F1 per arm/seed, paired C − B contrast wi
 GLOSSARY = details("Glossary (open when a term is unfamiliar)", """
 - **Class imbalance** — one class (here `normal`, about 93% of images) vastly outnumbers others. A classifier that always says `normal` scores high accuracy while finding no defects.
 - **Macro-F1** — compute F1 (the harmonic mean of precision and recall) separately for each class, then average the classes with equal weight. A missed rare class hurts it as much as a missed common one (Sokolova & Lapalme, 2009).
-- **Balanced accuracy** — the average of per-class recall.
+- **Balanced accuracy** — the average of per-class recall. A classifier cannot raise it just by making fewer calls of a rare class, because that lowers the rare class's recall.
+- **Average precision / AUPRC** — the area under the precision-recall curve of one class against the rest, computed from scores without choosing a threshold; *macro AUPRC* averages it over the classes. It measures ranking, not the decisions at the argmax rule.
 - **Augmentation** — label-preserving transformations of training images (here: horizontal flip, mild brightness and contrast) that add variation without new photographs.
 - **Synthetic augmentation** — adding generated images to training (Trabucco et al., 2023; Wang et al., 2022).
 - **Intended label** — the class named in the prompt that produced a generated image. Nobody has checked that the image shows that defect.
@@ -237,7 +250,7 @@ S1_INTRO = """
 
 The configuration cell holds every value a reader can change. The defaults run the canonical experiment; the optional fields are explained in Section 13. The Phi-4 checkpoint ships its model code as Python files inside the model repository, which `transformers` executes. `ALLOW_PHI4_REMOTE_CODE` is set to `True` so that Run all proceeds; that code is pinned to one immutable revision and each file's SHA-256 is verified before it is imported (Section 4 explains the boundary). Set it to `False` to stop before Phi-4 runs.
 
-**BYOD contract (read before choosing `byod`).** A zip containing `manifest.csv` with columns `image_id`, `path`, `class` and optional `group`, plus the images (`.jpg`, `.jpeg`, `.png`, sides 64–4096 px). Exactly three classes: one named `normal` and two defect classes (lowercase names such as `dent`, `stain`). Paths are relative to the manifest, without `..`. A `group` (for example a specimen or session id) must never span two classes. After grouping, each class needs at least 128 / 64 / 32 independent training groups (normal / more frequent defect / less frequent defect) and at least 5 images in each of validation and test. Data stays inside this runtime; the only transmission is the images you upload to the runtime yourself. **Do not upload confidential, restricted, personal or regulated images unless you are authorised to process them in Colab.**
+**BYOD contract (read before choosing `byod`).** A zip containing `manifest.csv` with columns `image_id`, `path`, `class` and optional `group`, plus the images (`.jpg`, `.jpeg`, `.png`, sides 64–4096 px, **8-bit** grayscale, RGB or palette; 16-bit, 32-bit and floating-point images are refused with a conversion instruction, because clipping them to 8 bits could erase a defect). Exactly three classes: one named `normal` and two defect classes (lowercase names such as `dent`, `stain`). Paths are relative to the manifest, without `..`. A `group` (for example a specimen or session id) may hold images of several classes, such as a session with normal and defective parts: the whole group stays in one partition and the bootstrap resamples it whole. Only the *same picture* carrying two labels (identical decoded pixels) is excluded as a label conflict. After grouping, each class needs at least 128 / 64 / 32 independent training groups (normal / more frequent defect / less frequent defect) and at least 5 images in each of validation and test; with fewer than **15 independent groups** of a class in validation or test the experiment still runs, but its test verdicts are withheld. Data stays inside this runtime; the only transmission is the images you upload to the runtime yourself. **Do not upload confidential, restricted, personal or regulated images unless you are authorised to process them in Colab.**
 """
 
 CONFIG = '''
@@ -595,13 +608,12 @@ print(f"label-conflict duplicates excluded: {g['label_conflict_groups']} groups 
 print('similar pairs (corr >= 0.95) that cross partitions, by label pair:', g['similar_pairs_crossing_partitions']['by_label_pair'])
 order = DATA['class_order']
 table(['partition', *order], [[s, *[DATA['split']['counts'].get(s, {}).get(c, 0) for c in order]] for s in ('train', 'val', 'test', 'excluded')])
-import csv
-with open(OUT / 'split_manifest.csv', newline='') as handle:
-    groups_by = {}
-    for r in csv.DictReader(handle):
-        groups_by.setdefault((r['split'], r['label']), set()).add(r['group_id'])
+GC = DATA['split']['group_counts']
 table(['partition', *[f'{c}: images / groups' for c in order]],
-      [[s, *[f"{DATA['split']['counts'].get(s, {}).get(c, 0)} / {len(groups_by.get((s, c), ()))}" for c in order]] for s in ('train', 'val', 'test')])
+      [[s, *[f"{DATA['split']['counts'].get(s, {}).get(c, 0)} / {GC[s][c]}" for c in order]] for s in ('train', 'val', 'test')])
+HS = DATA['split']['heldout_support']
+print(f"mixed-class groups kept whole: {g['mixed_class_groups']} | held-out group support: minimum {HS['minimum_groups_per_class']} per class, "
+      f"sufficient: {HS['sufficient']}" + (f" (below: {HS['below_minimum']})" if HS['below_minimum'] else '') + (f"; sparse (under {HS['sparse_below']}): {HS['sparse']}" if HS['sparse'] else ''))
 print(f"selected training budget: {DATA['selected']}; unused training images: {DATA['unused_training_images']:,}")
 print(f"split manifest SHA-256 {DATA['split']['manifest_sha256'][:16]}...; matches the reference audit: {DATA['split']['matches_reference']}")
 show('training_examples.png')
@@ -612,9 +624,9 @@ S2_NOTICE = """
 **What to notice.**
 
 - The defect counts match the published notes, but the normal counts do not (product A has 66 fewer normal images than documented; product C about 1,490 fewer). The notebook reports this; it does not guess why.
-- Five pairs of images are pixel-for-pixel identical yet labelled `scratches` in one copy and `spots` in the other, and several of those pairs sit in *different* official partitions. Those ten images are excluded as label conflicts: neither label can be trusted, and keeping them would put the same picture in two partitions.
+- Five pairs of images are pixel-for-pixel identical yet labelled `scratches` in one copy and `spots` in the other, and several of those pairs sit in *different* official partitions. Those ten images are excluded as label conflicts: neither label can be trusted, and keeping them would put the same picture in two partitions. A label conflict means *identical pixels* with two labels; a group of *different* images that hold different classes (possible in your own data, for example one session) is not a conflict and is kept whole.
 - The near-duplicate threshold (correlation 0.98 of 32 × 32 thumbnails) is a declared cut, not a natural boundary; the printout shows how many pairs sit just below it and how many similar pairs cross partitions. Most crossing pairs are normal/normal, because these surfaces share one texture.
-- The test set has only about 21 spot images. Every spot metric later rests on those few pictures. The second table counts **groups** as well as images: the bootstrap in Section 9 resamples groups, so a class with few test groups carries less independent evidence than its image count suggests. No minimum number of groups is enforced; read thin group counts as a warning.
+- The test set has only about 21 spot images. Every spot metric later rests on those few pictures. The second table counts **groups** as well as images: the bootstrap in Section 9 resamples groups, so a class with few test groups carries less independent evidence than its image count suggests. The notebook predeclares a minimum of 15 independent groups per class in validation and in test: below it, Section 9 prints the numbers but withholds every verdict; below 30 it warns that the class is sparse. Both are declared cuts, not guarantees. The Bosch spot class (about 21 groups in each held-out partition) clears the minimum and is flagged sparse.
 - `matches the reference audit: True` means your split is byte-identical to the one this notebook was written against. `False` means grouping or assignment changed (for example a different image decoder); the run continues with its own frozen manifest and records the difference.
 """
 
@@ -666,7 +678,7 @@ The fixed instruction asks for visible texture, illumination and the shape of an
 
 > Describe only what is visible in this grayscale close-up photograph of a surface, in at most three short sentences. Mention the texture, the illumination, and the shape and size of any visible mark. If you cannot tell what the material is, write 'material: unknown'. Do not guess the alloy, the manufacturing process or how severe any mark is.
 
-**Trust boundary.** The checkpoint `microsoft/Phi-4-multimodal-instruct` at the immutable revision `93f923e1…` implements its model, configuration and processor in five Python files inside the model repository, and `transformers 4.48.2` has no built-in implementation, so `trust_remote_code=True` is unavoidable. The stage refuses to run unless `ALLOW_PHI4_REMOTE_CODE` is `True`, pins every file (weights, configuration, tokenizer and the five code files) by SHA-256, and verifies them before `transformers` imports anything. Pinning bounds *which* code runs; it does not make the code safe by itself. The model is MIT-licensed. Its weights (11.2 GB) are deleted after this stage by default.
+**Trust boundary.** The checkpoint `microsoft/Phi-4-multimodal-instruct` at the immutable revision `93f923e1…` implements its model, configuration and processor in five Python files inside the model repository, and `transformers 4.48.2` has no built-in implementation, so `trust_remote_code=True` is unavoidable. The stage refuses to run unless `ALLOW_PHI4_REMOTE_CODE` is `True`, pins every file (weights, configuration, tokenizer and the five code files) by SHA-256, and verifies them before `transformers` imports anything. Each exemplar photograph is also checked against the SHA-256 recorded in `split_manifest.csv` immediately before Phi-4 reads it (the model still receives the original file as RGB); a changed file is refused. Pinning bounds *which* code runs; it does not make the code safe by itself. The model is MIT-licensed. Its weights (11.2 GB) are deleted after this stage by default.
 """
 
 S4_RUN = """
@@ -807,8 +819,10 @@ S9_INTRO = """
 
 The test stage first verifies the frozen record, then extracts features for the test partition (never seen until now), scores every arm and seed once, and computes:
 
-- **macro-F1** (primary), balanced accuracy, accuracy, and per-class precision, recall, F1 and support for each arm and seed;
-- the **C − B** contrast (primary) and **B − A** (context): the mean over seeds of the macro-F1 difference, with an approximate 95% interval from 1,000 **paired, class-stratified group bootstrap** resamples of the test set (every arm is scored on the same resamples; groups, not images, are resampled);
+- **macro-F1** and **balanced accuracy** (co-primary), **macro AUPRC** (secondary, threshold-free), accuracy, and per-class precision, recall, F1, average precision and support for each arm and seed;
+- the **C − B** contrast (primary) and **B − A** (context) for each of the three metrics: the mean over seeds of the difference, with an approximate 95% interval from 1,000 **paired, class-stratified group bootstrap** resamples of the test set (every arm and metric is scored on the same resamples; whole groups, not images, are resampled, and a group holding several classes is resampled whole);
+- the **pre-declared co-primary claim** (Section 3): *better* only if both co-primary intervals lie above zero;
+- **held-out group support**: with fewer than 15 independent groups of any class in validation or test, every verdict is withheld;
 - after freezing, an **overlap audit** of every synthetic candidate against validation and test images and a check that no exact duplicate crosses partitions. A consequential match marks the comparison invalid; it is never quietly removed.
 
 The decision rule is argmax over the head's logits. Softmax scores in `predictions.csv` are uncalibrated and are not probabilities of a defect.
@@ -819,28 +833,43 @@ Scoring the test set again after changing something, and picking the better resu
 S9_RUN = """
 run_stage('evaluate', 'lab', 'stage_evaluate.py')
 METRICS = load('metrics.json')
+SUPPORT = METRICS['heldout_support']
 print('test counts:', METRICS['test_counts'], '| comparison valid:', METRICS['comparison_valid'], METRICS['validity_note'])
+print('held-out groups per class (validation / test): ' + ', '.join(f"{c} {SUPPORT['group_counts']['val'][c]} / {SUPPORT['group_counts']['test'][c]}" for c in order)
+      + f" | predeclared minimum {SUPPORT['minimum_groups_per_class']}, sparse below {SUPPORT['sparse_below']}")
 if not METRICS['comparison_valid']:
     print('INVALID COMPARISON - not evidence: a held-out overlap was found after freezing. The numbers below are shown for the record only, without a verdict.')
+if not SUPPORT['sufficient']:
+    print('VERDICTS WITHHELD: fewer independent held-out groups than the predeclared minimum for ' + ', '.join(SUPPORT['below_minimum']) + '. The numbers below are descriptive only.')
+elif SUPPORT['sparse']:
+    print('WARNING, sparse support: ' + ', '.join(SUPPORT['sparse']) + ' groups. Intervals that rest on these classes are rough.')
 rows = []
 for arm, summ in METRICS['summary'].items():
     rows.append([METRICS['arms'][arm], *[fmt(summ['macro_f1']['per_seed'][str(s)]) for s in RECORD['seeds']], fmt(summ['macro_f1']['mean']),
-                 f"{fmt(summ['macro_f1']['min'])}–{fmt(summ['macro_f1']['max'])}", fmt(summ['balanced_accuracy']['mean']), fmt(summ['accuracy']['mean'])])
-table(['arm', *[f'macro-F1 seed {s}' for s in RECORD['seeds']], 'mean', 'range', 'balanced acc. (mean)', 'accuracy (mean)'], rows)
+                 fmt(summ['balanced_accuracy']['mean']), fmt(summ['macro_auprc']['mean']), fmt(summ['accuracy']['mean'])])
+table(['arm', *[f'macro-F1 seed {s}' for s in RECORD['seeds']], 'macro-F1 (mean)', 'balanced acc. (mean)', 'macro AUPRC (mean)', 'accuracy (mean)'], rows)
+LABELS = {'macro_f1': 'macro-F1 (co-primary)', 'balanced_accuracy': 'balanced accuracy (co-primary)', 'macro_auprc': 'macro AUPRC (secondary, threshold-free)'}
 for name, c in METRICS['contrasts'].items():
-    lo, hi = c['interval_95']
-    if not METRICS['comparison_valid']:
-        verdict = 'INVALID - not evidence, no verdict'
-    else:
-        verdict = 'the interval includes zero: no clear difference in this run' if lo <= 0 <= hi else ('the interval is above zero' if lo > 0 else 'the interval is below zero')
-    print(f"{name}: mean difference {c['mean_difference']:+.4f} (per seed {', '.join(f'{v:+.4f}' for v in c['per_seed'].values())}); "
-          f"approximate 95% interval [{lo:+.4f}, {hi:+.4f}] -> {verdict}")
+    verdict = METRICS['verdicts'][name]
+    rows = []
+    for m, label in LABELS.items():
+        lo, hi = c[m]['interval_95']
+        if not METRICS['comparison_valid']:
+            side = 'INVALID - not evidence, no verdict'
+        elif verdict['claim'] == 'withheld':
+            side = 'withheld'
+        else:
+            side = 'includes zero' if lo <= 0 <= hi else ('above zero' if lo > 0 else 'below zero')
+        rows.append([label, f"{c[m]['mean_difference']:+.4f}", ', '.join(f'{v:+.4f}' for v in c[m]['per_seed'].values()), f'[{lo:+.4f}, {hi:+.4f}]', side])
+    print(f'{name}, mean over seeds:')
+    table(['metric', 'mean difference', 'per seed', 'approx. 95% interval', 'interval'], rows)
+    print(f"{name} pre-declared co-primary claim: {verdict['claim'].upper()} ({verdict['reason']})")
 show('macro_f1_by_arm.png')
 show('confusion_matrices.png')
 """
 
 S9_NOTICE = """
-**What to notice.** Read the per-seed columns before the mean: if the sign of C − B changes between seeds, the mean hides disagreement. Compare the interval's width with the difference itself. The interval is **conditional on this split and this generated pool**: it reflects which test groups happened to be drawn, not what would happen with a different split, a new set of 64 generated images or another factory. In the confusion matrices, look at where each arm's errors go: false alarms on `normal`, missed defects, or scratch/spot confusion. An interval above zero says that macro-F1 differs on this split; it does not say what the difference consists of. Section 10 takes it apart.
+**What to notice.** Read the per-seed columns before the mean: if the sign of C − B changes between seeds, the mean hides disagreement. Compare the interval's width with the difference itself. The interval is **conditional on this split and this generated pool**: it reflects which test groups happened to be drawn, not what would happen with a different split, a new set of 64 generated images or another factory. In the confusion matrices, look at where each arm's errors go: false alarms on `normal`, missed defects, or scratch/spot confusion. An interval above zero in one co-primary metric is not a claim on its own: the pre-declared rule needs both. When the two disagree, Section 10 shows what the difference consists of.
 """
 
 S9_CHECK = checkpoint(
@@ -881,6 +910,8 @@ if 'B' in METRICS['per_run'] and 'C' in METRICS['per_run']:
         rows.append([s, *[f'{x:+.4f}' for x in d], f'{sum(d) / len(d):+.4f}', f"{METRICS['per_run']['C'][s]['macro_f1'] - METRICS['per_run']['B'][s]['macro_f1']:+.4f}"])
     mean = [sum(col) / len(col) for col in zip(*changes)]
     rows.append(['mean over seeds', *[f'{x:+.4f}' for x in mean], f'{sum(mean) / len(mean):+.4f}', f"{METRICS['summary']['C']['macro_f1']['mean'] - METRICS['summary']['B']['macro_f1']['mean']:+.4f}"])
+    table(['arm', *[f'average precision {c} (mean over seeds)' for c in order], 'macro AUPRC (mean)'],
+          [[a, *[fmt(sum(METRICS['per_run'][a][s]['average_precision'][c] for s in seeds) / len(seeds)) for c in order], fmt(METRICS['summary'][a]['macro_auprc']['mean'])] for a in ('B', 'C')])
     print('Macro-F1 change C − B, decomposed exactly: the per-class F1 changes, averaged over classes, then over seeds.')
     table(['seed', *[f'F1 change {c}' for c in present], 'mean of class changes', 'macro-F1 change'], rows)
 
@@ -900,23 +931,24 @@ if 'B' in METRICS['per_run'] and 'C' in METRICS['per_run']:
 """
 
 S10_INTERPRET = f"""
-### Reading C − B: where did the macro-F1 difference come from?
+### Reading C − B: where did the difference come from?
 
-Macro-F1 averages the F1 of the three classes, and each F1 combines precision and recall, so the same macro-F1 change can come from quite different behaviour. Read the tables above in this order:
+The pre-declared rule (Section 3) already guards the headline: C counts as better only if **both** macro-F1 and balanced accuracy improve. The tables above show *why* the two metrics agree or disagree. Read them in this order:
 
 1. **The decomposition table.** C − B in macro-F1 is exactly the average of the per-class F1 changes, first over classes, then over seeds. It shows which classes carry the difference, and whether they carry it on every seed. Do not explain the three-seed mean with the canonical seed's per-class lines alone: one seed can behave unlike the average.
-2. **Normal versus any defect.** For inspection the first question is whether a defective surface is flagged at all. *Defect sensitivity* is the share of defect images flagged as any defect; the *normal false-alarm rate* is the share of normal images flagged. Compare them per seed for B and C.
+2. **Normal versus any defect.** For inspection, the first question is whether a defective surface is flagged at all. *Defect sensitivity* is the share of defect images flagged as any defect; the *normal false-alarm rate* is the share of normal images flagged. Compare them per seed for B and C. If C flags fewer defects but also raises fewer false alarms, macro-F1 can rise while balanced accuracy does not: that is the pattern the co-primary rule refuses to count as an improvement.
 3. **Subtype.** Telling scratches from spots is a different task from detecting a defect. A scratch that moves from a `spots` prediction to `scratches` raises scratch recall without flagging one more defective surface.
+4. **Average precision.** Macro AUPRC ranks images by score without a threshold. If C − B is positive in AUPRC but not in balanced accuracy, C's scores may order images better while the argmax rule turns that into fewer calls rather than more found defects; a chosen operating point could change the picture, but this notebook does not choose one.
 
-Balanced accuracy (the mean of per-class recall, in the Section 9 table) summarises the three-class recalls, but recall changes can cancel across classes, so a near-zero change in balanced accuracy does not by itself show whether detection or precision changed. Under the argmax rule there is no tuned threshold, and fewer defect calls can raise precision while recall moves either way.
+Recall changes can cancel across classes inside balanced accuracy, so balanced accuracy is read together with the per-class tables, not instead of them.
 
 Keep three claim levels apart:
 
 - **Signal:** the generated pool changed what the classifier learned (a consistent difference on every seed shows this).
-- **Comparator:** C beats B *under macro-F1, at the argmax rule, on this split, this generated pool and this fixed, untuned shared recipe*. This is what the interval tests.
+- **Comparator:** C beats B *under the pre-declared co-primary rule, on this split, this generated pool and this fixed, untuned shared recipe*. This is what the paired intervals test.
 - **Operational usefulness:** C would make a better inspection system. This run cannot show it: that needs an explicit error-cost or operating-point objective (for example a target defect sensitivity), calibrated scores, and more than one product and split.
 
-{checkpoint("In the recorded Bosch run, C − B is +0.044 in test macro-F1 with an interval above zero. What can the canonical seed's per-class lines tell you, and what can they not?", "The recorded run is the Colab CLI run of revision `439c34f` (notebook blob `84061cc7`, 2026-10-04). It printed per-class lines for the canonical seed 17 only; the decomposition and normal-versus-any-defect tables were added after it, so read those in your own run. On seed 17: spot recall was 0.714 (15 of 21 spots) in A, B and C alike; scratch recall rose from 0.881 to 0.910 (59 to 61 of 67 scratches); C predicted `spots` 59 times against B's 78, so spot precision rose from 0.192 to 0.254. Those lines describe one seed of three, so they cannot explain the three-seed mean, and per-class subtype recall is not defect detection. The bounded statement is: the canonical seed improved scratch classification recall and left spot recall unchanged; an overall defect-detection advantage has not been established.")}
+{checkpoint("Your run shows C − B with a macro-F1 interval above zero, a balanced-accuracy interval that includes zero, and C flagging fewer defects than B on every seed. What do you report?", "No co-primary claim: under the pre-declared rule an improvement needs both intervals above zero. The tables say what happened instead: C made fewer defect calls, which raised precision and macro-F1, while it flagged fewer defective surfaces, so balanced accuracy did not improve. Report the comparator-level result as not established, describe the trade (fewer false alarms, fewer defects flagged) as descriptive evidence from this split and pool, and say that operational value is not tested.")}
 """
 
 S10_NOTICE = f"""
@@ -929,7 +961,7 @@ S10_NOTICE = f"""
 Complete these sentences in your own words, using only numbers printed above:
 
 1. **Task:** *On product A of the Bosch SDI dataset (or: on my own dataset, described by its source and classes), with 128 / 64 / 32 real training images and a frozen ResNet-18 with a linear head, we compared …*
-2. **Principal result:** *Mean test macro-F1 was … for A, … for B and … for C; C − B was … (approximate 95% interval …), with per-seed differences of …; the per-class F1 changes that carry it were …; defect sensitivity (normal versus any defect) was … for B and … for C*
+2. **Principal result:** *Mean test macro-F1 was … for A, … for B and … for C; C − B was … (approximate 95% interval …), with per-seed differences of …; C − B in balanced accuracy was … (interval …), so the co-primary claim is …; macro AUPRC C − B was …; the per-class F1 changes that carry the macro-F1 change were …; defect sensitivity (normal versus any defect) was … for B and … for C*
 3. **Baseline / reference:** *The majority baseline scored accuracy … but macro-F1 …*
 4. **Important failure mode or uncertainty:** *Most remaining errors were …; the spot class rests on … test images; …*
 5. **Limitations:** *One grouped split of one product without specimen metadata; one generated pool with intended, unverified labels; frozen models in 4-bit; no calibration; …*
@@ -941,16 +973,25 @@ Your prediction from the start: was it right? What in the evidence would have to
 S10_ANSWER = """
 ### What this run shows: a bounded answer to the title question
 
-*Can synthetic defects improve visual inspection?* The answer below is for the recorded Bosch run: the Colab CLI run of revision `439c34f` (notebook blob `84061cc7`, fresh Colab T4, 2026-10-04). Its numbers are quoted from that run and were not re-run for this revision, whose stage code is unchanged; that run predates the decomposition and normal-versus-any-defect tables above. Write your own conclusion first. If your run printed different numbers, or you used your own data, answer from your own output with the same claim levels.
+*Can synthetic defects improve visual inspection?* Write your own conclusion first. The table printed by the next cell is computed from this run's `metrics.json` by the evaluation stage (`claim_table` in the shared core); nothing in it is typed in, so it answers for whatever data you ran, Bosch or your own. Each row names its evidence and the level of claim it supports: *supported*, *not established*, *descriptive only* or *not tested*. A withheld verdict (invalid comparison, or fewer than 15 held-out groups of a class) is printed as withheld.
 
-| Claim | Evidence in the recorded run | Level |
-|---|---|---|
-| The generated pool changed what the classifier learned | test macro-F1 C − B positive on every seed (+0.0415, +0.0559, +0.0355) | supported (signal) |
-| Synthetic substitution beats conventional augmentation under the pre-declared primary metric | mean C − B +0.0443 in test macro-F1, approximate 95% interval [+0.0193, +0.0671]; one split, one generated pool, one fixed, untuned shared recipe | supported on this split and pool (comparator) |
-| Synthetic substitution flags more defective surfaces (normal versus any defect) | not reported by the recorded run; on canonical seed 17 only, scratch classification recall rose (61 against 59 of 67) and spot recall was unchanged (15 of 21) | not established |
-| Synthetic defects improve visual inspection in practice | no error-cost or operating-point objective, no calibration, one product, image groups rather than physical specimens | not tested (operational) |
+**Why the design changed (quoted, not re-run).** The recorded Colab CLI T4 run of revision `802ce28` (notebook blob `7a98b10e`, 2026-10-12), which used the previous design (macro-F1 alone) and was not re-run under this one reported a mean C − B of +0.0443 in macro-F1 (interval [+0.0193, +0.0671]) while C flagged fewer defect images than B on every seed (80, 75 and 81 against 82, 82 and 83 of 88) and raised fewer false alarms. Those numbers are from that run's printed output and are shown only to explain the change. Under the co-primary rule, a macro-F1 gain of that kind is not counted as an improvement unless balanced accuracy improves too.
+"""
 
-**Answer.** In this run, substituting FLUX-generated defects into training raised mean test macro-F1 over conventional augmentation, with an interval above zero, on this split, this generated pool and this recipe: a comparator-level result. The canonical seed improved scratch classification recall and left spot recall unchanged; an overall defect-detection advantage has not been established. Whether synthetic defects improve inspection in practice is not tested here: that needs an explicit error-cost or operating-point objective. Next steps: read the decomposition and detection tables of a fresh run, then repeat with independently generated pools and another product (Section 13.5).
+S10_ANSWER_RUN = """
+CLAIMS = METRICS.get('claims', [])
+if CLAIMS:
+    table(['claim', 'evidence in this run', 'level'], [[r['claim'], r['evidence'], r['level']] for r in CLAIMS])
+    verdict = METRICS['verdicts']['C - B']
+    answers = {
+        'better': 'On this split, this generated pool and this recipe, synthetic substitution beat conventional augmentation on both co-primary metrics (macro-F1 and balanced accuracy).',
+        'worse': 'On this split, this generated pool and this recipe, synthetic substitution did worse than conventional augmentation on both co-primary metrics.',
+        'no co-primary claim': 'Synthetic substitution did not beat conventional augmentation under the pre-declared rule: the macro-F1 and balanced-accuracy intervals do not both lie above zero, so a change in one metric alone is not counted as an improvement.',
+        'withheld': 'No verdict: ' + verdict['reason'] + '.',
+    }
+    print('ANSWER: ' + answers[verdict['claim']] + ' Whether synthetic defects improve inspection in practice is not tested here: that needs an explicit error-cost or operating-point objective.')
+else:
+    print('Arm C was not run (generation shortfall), so this run gives no answer to the title question.')
 """
 
 S11_INTRO = """
@@ -1002,7 +1043,11 @@ summary = {
     'split_sha256': DATA['split']['manifest_sha256'], 'split_matches_reference': DATA['split']['matches_reference'],
     'generation': STATUS, 'phi4_guided_prompts': sum(p['phi4_guided'] for p in PROMPTS), 'prompts': len(PROMPTS),
     'test_macro_f1_mean': {a: s['macro_f1']['mean'] for a, s in METRICS['summary'].items()},
-    'contrasts': {k: {'mean_difference': v['mean_difference'], 'interval_95': v['interval_95'], 'per_seed': v['per_seed']} for k, v in METRICS['contrasts'].items()},
+    'test_balanced_accuracy_mean': {a: s['balanced_accuracy']['mean'] for a, s in METRICS['summary'].items()},
+    'test_macro_auprc_mean': {a: s['macro_auprc']['mean'] for a, s in METRICS['summary'].items()},
+    'design': METRICS['design'],
+    'contrasts': {k: {m: {'mean_difference': v['mean_difference'], 'interval_95': v['interval_95'], 'per_seed': v['per_seed']} for m, v in by.items()} for k, by in METRICS['contrasts'].items()},
+    'verdicts': METRICS['verdicts'], 'heldout_support': METRICS['heldout_support'],
     'comparison_valid': METRICS['comparison_valid'], 'exported': RECORD['selection'], 'reload_parity': PARITY,
     'frozen_record_sha256': RECORD['record_sha256'], 'stages': STAGE_LOG, 'download_bytes': download_bytes,
     'peak_gpu_allocated_gib': {'phi4': PHI4_STATE['peak_gpu_allocated_gib'], 'flux_encoders': FLUX_STATE['encoder_peak_gpu_gib'], 'flux_transformer': FLUX_STATE['transformer_peak_gpu_gib']},
@@ -1025,6 +1070,8 @@ limitations = [
     '- One generated pool of 32 candidates per defect class from fixed seeds. Generated labels are the prompt\'s intended labels and were not validated by anyone. Results may differ for another pool.',
     '- Phi-4 and FLUX run frozen in 4-bit (NF4); every number is the 4-bit models\'. ' + ('Pretraining overlap of Phi-4, FLUX or ResNet-18 with this public dataset cannot be excluded.' if DATA_SOURCE == 'bosch' else 'If your images are, or resemble, publicly available images, pretraining overlap of Phi-4, FLUX or ResNet-18 with them cannot be excluded.'),
     '- The bootstrap interval is approximate and conditional on this split and pool; it does not include training or generation variability.',
+    f"- Held-out groups per class (validation / test): {METRICS['heldout_support']['group_counts']}; predeclared minimum {METRICS['heldout_support']['minimum_groups_per_class']}." + (' Verdicts were withheld: ' + ', '.join(METRICS['heldout_support']['below_minimum']) + '.' if not METRICS['heldout_support']['sufficient'] else '') + (' Sparse: ' + ', '.join(METRICS['heldout_support']['sparse']) + '.' if METRICS['heldout_support']['sparse'] else ''),
+    '- The co-primary rule (macro-F1 and balanced accuracy) was declared in advance; epochs and the exported arm are still selected on validation macro-F1.',
     '- Scores are softmax of uncalibrated logits under an argmax rule; no deployment threshold was chosen or validated.',
     *(['- Documented dataset counts differ from the measured archive for normal images.'] if DATA_SOURCE == 'bosch' else []),
     f"- {len(G['label_conflict_images'])} images in {G['label_conflict_groups']} label-conflict duplicate groups were excluded.",
@@ -1070,9 +1117,12 @@ print(f"DATA        {DATA_SOURCE}: split {DATA['split']['manifest_sha256'][:12]}
 print(f"PROMPTS     {summary['phi4_guided_prompts']} of {len(PROMPTS)} Phi-4-guided | GENERATION usable {STATUS['usable']} complete={STATUS['complete']}")
 print('TEST MACRO-F1 (mean over seeds) ' + ', '.join(f'{a}={v:.4f}' for a, v in summary['test_macro_f1_mean'].items()))
 print(f"VALIDITY    comparison valid: {METRICS['comparison_valid']} | smoke run: {RECORD['smoke_run']}")
-for name, c in METRICS['contrasts'].items():
+print(f"SUPPORT     held-out groups sufficient: {METRICS['heldout_support']['sufficient']} (minimum {METRICS['heldout_support']['minimum_groups_per_class']} per class)" + (f"; sparse: {', '.join(METRICS['heldout_support']['sparse'])}" if METRICS['heldout_support']['sparse'] else ''))
+for name, by in METRICS['contrasts'].items():
     label = '' if METRICS['comparison_valid'] else ' (INVALID - not evidence)'
-    print(f"CONTRAST    {name}{label}: {c['mean_difference']:+.4f}, approx. 95% interval [{c['interval_95'][0]:+.4f}, {c['interval_95'][1]:+.4f}]")
+    for metric, c in by.items():
+        print(f"CONTRAST    {name} {metric}{label}: {c['mean_difference']:+.4f}, approx. 95% interval [{c['interval_95'][0]:+.4f}, {c['interval_95'][1]:+.4f}]")
+    print(f"VERDICT     {name} co-primary claim: {METRICS['verdicts'][name]['claim']} ({METRICS['verdicts'][name]['reason']})")
 print(f"EXPORT      arm {RECORD['selection']['arm']} seed {RECORD['selection']['seed']} | reload parity {PARITY['passed']} (max diff {PARITY['max_abs_logit_difference']:.1e}, same decisions {PARITY['same_predictions']}) | new-image inference {PARITY['new_image_inference']['status']}")
 print(f"RESOURCES   model stages {summary['model_time_seconds_excluding_installs']} s; wall {summary['wall_seconds_since_configuration']} s; "
       f"peak GPU in use {max(r['peak_gpu_used_mib'] for r in STAGE_LOG.values())} MiB; peak child RSS {max(r['peak_child_rss_mib'] for r in STAGE_LOG.values())} MiB; "
@@ -1167,6 +1217,8 @@ S13_TROUBLE = """
 | `frozen input ... changed` | a file changed after freezing | re-run from Section 8; do not edit outputs by hand |
 | `reload parity ... FAIL` | the artifact or backbone file differs | re-run Section 11; if it persists, the export is not trustworthy |
 | BYOD `REFUSED  stage 'data': ...` (Run all stops there, with no traceback) | the manifest or images break the contract | the message names the line, column, class, group or limit; fix the zip, check it with the BYOD check cell, then Run all again |
+| BYOD `REFUSED ... image mode 'I;16'` (or `I`, `F`) | a 16-bit, 32-bit or floating-point image | convert every image to 8-bit with one intensity range for the whole dataset (the message shows how), rebuild the zip and check it with the BYOD check cell |
+| `VERDICTS WITHHELD` in Section 9 | fewer than 15 independent held-out groups of a class | the numbers are descriptive only; add independent groups (new specimens or sessions) to that class rather than near-copies |
 | HF warning about `HF_TOKEN` | unauthenticated downloads | harmless: every model used here is ungated, and the notebook removes tokens from child processes |
 
 ### 13.5 Further exploration
@@ -1258,7 +1310,7 @@ def build() -> dict:
     cells += script_cells("stage_evaluate.py") + script_cells("stage_export.py") + script_cells("stage_reload.py")
     cells += [code(S8_RUN), md(S8_NOTICE), md(S8_CHECK), md(S9_INTRO)]
     cells.append(code(S9_RUN))
-    cells += [md(S9_NOTICE), md(S9_CHECK), md(S10_INTRO), code(S10_RUN), md(S10_INTERPRET), md(S10_NOTICE), md(S10_ANSWER), md(S11_INTRO)]
+    cells += [md(S9_NOTICE), md(S9_CHECK), md(S10_INTRO), code(S10_RUN), md(S10_INTERPRET), md(S10_NOTICE), md(S10_ANSWER), code(S10_ANSWER_RUN), md(S11_INTRO)]
     cells.append(code(S11_RUN))
     cells += [md(S11_NOTICE), md(S11_CHECK), md(S12_INTRO), code(S12_RUN, form=True), md(S13_INTRO), code(S13_EXERCISE), md(S13_REVIEW), code(S13_REVIEW_RUN), md(S13_BYOD), code(S13_BYOD_RUN), md(S13_TROUBLE), md(DISCLOSURE)]
     for n, cell in enumerate(cells):

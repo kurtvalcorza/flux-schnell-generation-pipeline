@@ -71,14 +71,41 @@ Peer-review follow-up (`07ca22e`), besides the M1 changes above:
 - The labels are described as source-provided image-level labels, with an unknown annotation procedure and a single-label assumption.
 - Label preservation under augmentation is stated as an assumption, and BYOD users are asked to check it.
 
-Owner decisions pending, with options in the pull request:
-- BSA2-M1: A, B, C or D (A applied provisionally).
-- BSA2-CX3: mixed-class BYOD acquisition groups.
-- BSA2-CX4: a predeclared minimum held-out group support, with the verdict withheld below it.
-- BSA2-CX6: BYOD 16-bit images are clipped to 0–255.
-- BSA2-CX7: Phi-4 exemplar bytes are not digest-checked at consumption.
+The owner decisions that were pending here were decided on 2026-10-13; see the next section.
 
 Not addressed: BSA2-S1 and peer-review item 12 (suggestions). Evidence boundary: generator parity, unit tests with stand-ins for the child process, and the review's acceptance checks on the regenerated notebook; no hosted run of the new blob.
+
+## 2026-10-13 owner decisions (BSA2-M1 = C, CX3 = B, CX4 = A, CX6 = A, CX7 = A)
+
+Unlike the changes above, these change stage code (`sdi_core.py`, `stage_data.py`, `stage_evaluate.py`, `stage_phi4.py`, and the question text in `stage_fit.py`), so the frozen record, `STAGE_SOURCES` and `metrics.json` change. **The Colab CLI T4 run of `802ce28` (notebook blob `7a98b10e`, 2026-10-12) passed, but it covers the previous design only** (macro-F1 alone, single-class groups, 16-bit images clipped, Phi-4 bytes not re-checked). It is not evidence for this design, and a new hosted run is needed.
+
+**New pre-declared primary comparison (BSA2-M1, option C).** Two metrics are co-primary, both at the argmax rule: test macro-F1 and test balanced accuracy. C is reported better than B only if the paired 95% group-bootstrap intervals of both C − B contrasts (mean over seeds) lie above zero, and worse only if both lie below zero; anything else is "no co-primary claim". This is an intersection-union rule, so no multiplicity correction is applied.
+- Why: macro-F1 at the argmax rule rises when a classifier makes fewer defect calls, which is what happened in the `802ce28` run. C flagged 80, 75 and 81 of 88 defect images against B's 82, 82 and 83 (quoted from that run's printed output), yet its macro-F1 rose. Balanced accuracy cannot rise that way. The rule adds no threshold, recall target or selection step.
+- Matched-recall operating points were not used: they need a recall target and per-arm thresholds chosen on about 21 validation spot images.
+- Secondary, threshold-free: macro AUPRC (mean one-vs-rest average precision from the softmax scores), with the same paired bootstrap.
+- Unchanged: epochs and the exported arm are still selected on validation macro-F1.
+- The notebook's closing answer is computed from `metrics.json` (`claim_table`), not typed in.
+- Expected (inferred, not run): the split, the fits and the predictions are unchanged, so the macro-F1 contrast should reproduce exactly. A synthetic check shows the new `paired_contrast` returns the old macro-F1 result bit for bit. The balanced-accuracy contrast is new.
+
+**Mixed-class acquisition groups (CX3, option B).**
+- A label conflict now means identical decoded pixels carrying two labels; every copy is excluded.
+- A group whose different images hold different classes (a declared specimen or session, or near-duplicate frames) is kept whole. It is split on its class-count vector and resampled whole: the bootstrap stratifies groups by the set of classes they hold.
+- The BYOD manifest no longer refuses such groups.
+- With only single-class groups, the new split equals the previous per-class rule exactly (unit test against a copy of the old function). The Bosch conflicts were five exact pairs forming their own groups, so the Bosch split, reference SHA `8b5ef942…`, is expected to be reproduced. The run's `matches the reference audit` line will confirm it.
+
+**Held-out group support (CX4, option A).**
+- The data and test stages report images and groups per partition and class.
+- With fewer than 15 independent groups of any class in validation or test, every verdict is withheld; below 30, a sparse warning is printed.
+- Rationale: below 15 groups, one group moves a class's recall by more than 0.06 and the percentile bootstrap has very few distinct values. The canonical Bosch split's smallest held-out class is spots, with 21 groups in validation and in test (printed by the `802ce28` run), so it clears the minimum and is flagged sparse. These are declared cuts, not guarantees.
+
+**High-bit-depth images (CX6, option A).** `I;16`, `I`, `F` (and the other `I;16*` and `I;32` modes) are refused with one message that says how to convert, instead of being clipped. The refusal is raised during inventory, so it is never recorded as a merely undecodable file. The Bosch archive is 8-bit and is unaffected.
+
+**Verified Phi-4 inputs (CX7, option A).** `stage_phi4.py` reads each exemplar through `open_verified_rgb`, which checks the file's SHA-256 against `split_manifest.csv` before decoding and refuses on a mismatch. The model still receives RGB, so with unchanged bytes the captions are unchanged.
+
+Offline evidence (stand-ins, not a hosted run):
+- Unit tests for each decision.
+- The real `stage_data.py --check-byod` on synthetic zips: a mixed-class session was kept whole (exit 0), and a 16-bit PNG was refused with one `CONTRACT FAILURE` line (exit 2).
+- The notebook's Section 9, 10, answer and records cells executed on a `metrics.json` built with the same core calls from synthetic predictions.
 
 ## Verification procedure
 

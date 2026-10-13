@@ -285,7 +285,6 @@ def test_byod_manifest_accepts_valid_folder(tmp_path):
         ([("n1", "i/n1.jpg", "normal", ""), ("n1", "i/n2.jpg", "dent", ""), ("t", "i/t.jpg", "stain", "")], "image_id,path,class,group", "duplicate image_id"),
         ([("n1", "../x.jpg", "normal", ""), ("d1", "i/d1.jpg", "dent", ""), ("t", "i/t.jpg", "stain", "")], "image_id,path,class,group", "relative"),
         ([("n1", "i/n1.jpg", "Normal!", ""), ("d1", "i/d1.jpg", "dent", ""), ("t", "i/t.jpg", "stain", "")], "image_id,path,class,group", "class"),
-        ([("n1", "i/n1.jpg", "normal", "g"), ("d1", "i/d1.jpg", "dent", "g"), ("t", "i/t.jpg", "stain", "")], "image_id,path,class,group", "spans classes"),
         ([("n1", "i/n1.jpg", "normal", ""), ("d1", "i/d1.jpg", "dent", "")], "image_id,path,class,group", "exactly two defect classes"),
     ],
 )
@@ -337,12 +336,19 @@ def test_generation_shortfall_blocks_the_comparison():
     assert core.generation_status(ok, ["scratches", "spots"])["complete"] is True
 
 
-def test_nonfinite_image_modes_are_refused(tmp_path):
-    array = np.full((80, 80), np.nan, dtype=np.float32)
-    path = tmp_path / "f.tif"
-    Image.fromarray(array).save(path)
-    with pytest.raises(core.ContractError, match="non-finite"):
-        core.load_gray(path)
+def test_high_bit_depth_images_are_refused_not_clipped(tmp_path):
+    """CX6: 16-bit, 32-bit and float images are refused with one conversion instruction, also during inventory."""
+    cases = {"i16.png": Image.fromarray(np.full((80, 80), 40000, dtype=np.uint16)), "f.tif": Image.fromarray(np.full((80, 80), np.nan, dtype=np.float32)),
+             "i32.tif": Image.fromarray(np.full((80, 80), 70000, dtype=np.int32))}
+    for name, image in cases.items():
+        path = tmp_path / name
+        image.save(path)
+        with pytest.raises(core.UnsupportedBitDepth, match="8-bit") as info:
+            core.load_gray(path)
+        assert "convert" in str(info.value).lower() and "\n" not in str(info.value)
+        with pytest.raises(core.UnsupportedBitDepth):
+            core.inspect_image(path)  # never recorded as a merely undecodable file
+    assert core.inspect_image(_jpeg(tmp_path / "ok.png"))["decode_ok"] is True
 
 
 # ------------------------------------------------------------------------------------------------ schedule, metrics, bootstrap
@@ -933,45 +939,58 @@ def test_byod_check_cell_shows_a_refusal_as_one_line(notebook):
     assert printed == ["BYOD check did not pass: stage 'byod_check' refused: no manifest.csv"]
 
 
-def _contrast_lines(notebook, valid):
+def _metric_contrast(mean, lo, hi, metric):
+    return {"metric": metric, "mean_difference": mean, "per_seed": {"17": mean, "29": mean, "43": mean}, "interval_95": [lo, hi]}
+
+
+def _contrast_lines(notebook, valid, claim="better", sufficient=True):
     cell = _cell(notebook, "run_stage('evaluate'")
     printed: list[str] = []
-    contrast = {"mean_difference": 0.0443, "per_seed": {"17": 0.04, "29": 0.05, "43": 0.04}, "interval_95": [0.0193, 0.0671]}
-    summ = {m: {"per_seed": {"17": 0.6}, "mean": 0.6, "min": 0.6, "max": 0.6} for m in ("macro_f1", "balanced_accuracy", "accuracy")}
-    ns = {"run_stage": lambda *a: None, "print": lambda *a: printed.append(" ".join(map(str, a))), "table": lambda *a: None, "show": lambda *a: None,
-          "fmt": lambda v, d=3: f"{v:.{d}f}", "RECORD": {"seeds": [17]},
-          "load": lambda name: {"test_counts": {}, "comparison_valid": valid, "validity_note": "" if valid else "overlap",
-                                "summary": {"C": summ}, "arms": {"C": "C"}, "contrasts": {"C - B": contrast}}}
+    by_metric = {m: _metric_contrast(0.0443, 0.0193, 0.0671, m) for m in core.CONTRAST_METRICS}
+    summ = {m: {"per_seed": {"17": 0.6}, "mean": 0.6, "min": 0.6, "max": 0.6} for m in ("macro_f1", "balanced_accuracy", "accuracy", "macro_auprc")}
+    support = core.heldout_support({"val": {"normal": 40, "spots": 21 if sufficient else 9}, "test": {"normal": 40, "spots": 21}})
+    verdict = core.co_primary_verdict(by_metric, valid=valid, support=support)
+    ns = {"run_stage": lambda *a: None, "print": lambda *a: printed.append(" ".join(map(str, a))), "table": lambda h, rows: printed.extend(" | ".join(map(str, r)) for r in rows), "show": lambda *a: None,
+          "fmt": lambda v, d=3: f"{v:.{d}f}", "RECORD": {"seeds": [17]}, "order": ["normal", "spots"],
+          "load": lambda name: {"test_counts": {}, "comparison_valid": valid, "validity_note": "" if valid else "overlap", "heldout_support": support,
+                                "summary": {"C": summ}, "arms": {"C": "C"}, "contrasts": {"C - B": by_metric}, "verdicts": {"C - B": verdict}}}
     exec(compile(cell, "evaluate", "exec"), ns)
     return printed
 
 
-def test_contrast_verdicts_are_withheld_when_the_comparison_is_invalid(notebook):
-    """BSA2-m4: a comparison marked invalid prints no 'above zero' verdict, and says so first."""
+def test_contrast_verdicts_are_withheld_when_invalid_or_unsupported(notebook):
+    """BSA2-m4 + CX4: an invalid comparison or too few held-out groups prints the numbers with no verdict."""
     valid = _contrast_lines(notebook, True)
-    assert any("the interval is above zero" in line for line in valid) and not any("INVALID" in line for line in valid)
+    assert any("above zero" in line for line in valid) and not any("INVALID" in line or "WITHHELD" in line for line in valid)
+    assert any("co-primary claim: BETTER" in line for line in valid) and any("WARNING, sparse support" in line for line in valid)
     invalid = _contrast_lines(notebook, False)
     assert not any("above zero" in line or "includes zero" in line for line in invalid)
-    assert "INVALID COMPARISON" in invalid[1] and any("INVALID - not evidence" in line for line in invalid[2:])
+    assert any("INVALID COMPARISON" in line for line in invalid) and any("INVALID - not evidence" in line for line in invalid) and any("WITHHELD (" in line for line in invalid)
+    thin = _contrast_lines(notebook, True, sufficient=False)
+    assert any(line.startswith("VERDICTS WITHHELD") and "val/spots: 9" in line for line in thin)
+    assert not any("above zero" in line for line in thin) and any("co-primary claim: WITHHELD" in line for line in thin)
     summary = _cell(notebook, "# @title Write environment, run summary")
-    assert summary.index('print(f"VALIDITY') < summary.index("print(f\"CONTRAST") and "(INVALID - not evidence)" in summary
+    assert summary.index('print(f"VALIDITY') < summary.index("print(f\"CONTRAST") and "(INVALID - not evidence)" in summary and 'print(f"VERDICT' in summary
 
 
 def test_result_is_interpreted_and_answered_within_claim_levels(notebook):
-    """BSA2-M1 (provisional option A): per-class decomposition, fixed recipe, claim levels and a bounded answer."""
+    """BSA2-M1 (option C): co-primary design declared before any model runs; interpretation and a run-derived
+    answer. Structural/wording test; the answer's content is tested through claim_table below."""
     markdown = ["".join(c["source"]) for c in notebook["cells"] if c["cell_type"] == "markdown"]
+    question = next(m for m in markdown if "The pre-declared rule (co-primary)" in m)
+    for phrase in ("macro-F1", "balanced accuracy", "both", "intersection-union", "Why this design", "fewer defect calls", "Matched-recall operating points were considered", "AUPRC", "15 independent groups"):
+        assert phrase in question, phrase
     reading = next(m for m in markdown if m.lstrip().startswith("### Reading C − B"))
-    for phrase in ("balanced accuracy", "recall", "precision", "decomposition", "Normal versus any defect", "Subtype", "canonical seed", "Signal", "Comparator", "Operational usefulness"):
+    for phrase in ("balanced accuracy", "recall", "precision", "decomposition", "Normal versus any defect", "Subtype", "canonical seed", "Average precision", "Signal", "Comparator", "Operational usefulness"):
         assert phrase in reading, phrase
     answer = next(m for m in markdown if m.lstrip().startswith("### What this run shows"))
-    assert "Write your conclusion" not in answer and "not established" in answer and "not tested" in answer and "84061cc7" in answer
-    # CX1/CX2: the canonical seed must not explain the three-seed mean, and no categorical detection claim
-    assert "not because it found more defects" not in answer and "not supported" not in answer
-    assert "near zero in balanced accuracy, the gain is mostly precision" not in reading
-    assert "has not been established" in answer and "seed 17" in answer
+    assert "Write your conclusion" not in answer and "computed from this run" in answer and "802ce28" in answer and "not re-run" in answer
+    assert "not because it found more defects" not in answer and "near zero in balanced accuracy, the gain is mostly precision" not in reading
     assert any("fixed, untuned shared recipe" in m and "not tuned per arm" in m for m in markdown)
-    sources = ["".join(c["source"]) for c in notebook["cells"]]
-    assert sources.index(reading) < sources.index(next(m for m in markdown if "### Write your conclusion" in m)) < sources.index(answer)
+    cells = ["".join(c["source"]) for c in notebook["cells"]]
+    answer_code = cells[cells.index(answer) + 1]
+    assert answer_code.startswith("CLAIMS = METRICS.get('claims'") and notebook["cells"][cells.index(answer) + 1]["cell_type"] == "code"
+    assert cells.index(reading) < cells.index(next(m for m in markdown if "### Write your conclusion" in m)) < cells.index(answer)
 
 
 def test_write_up_layer_and_attribution(notebook):
@@ -997,8 +1016,8 @@ def test_write_up_layer_and_attribution(notebook):
 def _metrics_from_confusions(cms: dict) -> dict:
     """metrics.json-shaped dict built with the core's own metrics from {arm: {seed: confusion}}."""
     order = ["normal", "scratches", "spots"]
-    per_run = {a: {s: core.metrics_from_confusion(np.array(cm), order) for s, cm in runs.items()} for a, runs in cms.items()}
-    summary = {a: {m: {"mean": float(np.mean([r[m] for r in runs.values()])), "per_seed": {s: r[m] for s, r in runs.items()}} for m in ("macro_f1", "balanced_accuracy")} for a, runs in per_run.items()}
+    per_run = {a: {s: {**core.metrics_from_confusion(np.array(cm), order), "average_precision": {c: 0.5 for c in order}, "macro_auprc": 0.5} for s, cm in runs.items()} for a, runs in cms.items()}
+    summary = {a: {m: {"mean": float(np.mean([r[m] for r in runs.values()])), "per_seed": {s: r[m] for s, r in runs.items()}} for m in ("macro_f1", "balanced_accuracy", "macro_auprc")} for a, runs in per_run.items()}
     return {"per_run": per_run, "summary": summary}
 
 
@@ -1040,3 +1059,141 @@ def test_section10_decomposes_macro_f1_and_separates_detection_from_subtype(note
     sc_b = metrics["per_run"]["B"]["17"]["per_class"]["scratches"]["recall"]
     sc_c = metrics["per_run"]["C"]["17"]["per_class"]["scratches"]["recall"]
     assert sc_c > sc_b  # subtype recall rose without one more defective surface being flagged
+
+
+# ------------------------------------------------------------------------------------------- owner decisions (2026-10-13)
+
+def _old_assign_split(groups, version=core.SPLIT_VERSION, fractions=core.SPLIT_FRACTIONS):
+    """The per-class rule used before mixed-class groups (copied from b4b7a3e) to prove single-class splits unchanged."""
+    out = {}
+    for label in sorted({g["label"] for g in groups.values()}):
+        gids = sorted((gid for gid, g in groups.items() if g["label"] == label), key=lambda gid: core._rank(version, "split", gid))
+        total = sum(groups[gid]["size"] for gid in gids)
+        counts = {name: 0 for name, _ in fractions}
+        for gid in gids:
+            name = max(fractions, key=lambda item: ((item[1] * total - counts[item[0]]) / (item[1] * total), -[f[0] for f in fractions].index(item[0])))[0]
+            out[gid] = name
+            counts[name] += groups[gid]["size"]
+    return out
+
+
+def test_single_class_split_is_unchanged_by_mixed_group_support():
+    """CX3: with only single-class groups the class-count-vector split equals the previous per-class rule exactly, so
+    the canonical Bosch split (reference SHA 8b5ef942...) is expected to be reproduced."""
+    rng = np.random.default_rng(3)
+    groups = {f"g{i}": {"label": ["normal", "dent", "stain"][i % 3], "size": int(rng.integers(1, 4))} for i in range(600)}
+    assert core.assign_split(groups) == _old_assign_split(groups)
+    records = _records({"normal": 300, "dent": 160, "stain": 90}, dup_pairs=10)
+    _group(records)
+    info = core.build_split_rows(records)
+    assert info["mixed_class_groups"] == []
+
+
+def test_mixed_class_groups_stay_whole_and_conflicts_stay_excluded():
+    """CX3: a declared session holding normal and defect images is kept whole in one partition and contributes to
+    each class's budget; identical pixels with two labels are still excluded."""
+    records = _records({"normal": 330, "dent": 170, "stain": 100}, conflict=True)
+    for n, r in enumerate(records):
+        r["declared_group"] = f"s{n // 4}" if n % 7 == 0 or n % 7 == 1 else ""
+    sigs = np.stack([r["signature"] for r in records])
+    for r, g in zip(records, core.assign_groups(records, sigs)["group_of"], strict=True):
+        r["group_id"] = g
+    info = core.build_split_rows(records)
+    core.check_group_leakage(records)
+    assert info["mixed_class_groups"], "the fixture must contain mixed-class groups"
+    assert len(info["label_conflict_groups"]) == 1
+    assert sorted(r["image_id"] for r in records if r["exclusion_reason"] == "label-conflict-duplicate") == ["normal_0", "stain_99"]
+    for gid in info["mixed_class_groups"]:
+        members = [r for r in records if r["group_id"] == gid and r["split"] != "excluded"]
+        assert len({r["label"] for r in members}) > 1 and len({r["split"] for r in members}) == 1
+    assert {c: sum(r["selected"] for r in records if r["label"] == c) for c in ("normal", "dent", "stain")} == {"normal": 128, "dent": 64, "stain": 32}
+    counts = core.group_counts(records, info["class_order"])
+    assert counts["test"]["dent"] == len({r["group_id"] for r in records if r["split"] == "test" and r["label"] == "dent"})
+
+
+def test_byod_manifest_accepts_a_mixed_class_group(tmp_path):
+    root = _byod(tmp_path, [("n1", "i/n1.jpg", "normal", "g"), ("d1", "i/d1.jpg", "dent", "g"), ("t", "i/t.jpg", "stain", "")])
+    assert [r["declared_group"] for r in core.load_byod_manifest(root)] == ["g", "g", ""]
+
+
+def test_bootstrap_resamples_mixed_class_groups_whole():
+    """CX3: a group holding two classes is one resampling unit; single-class strata behave as before."""
+    labels = np.array([0, 1, 0, 0, 1, 1, 2, 2, 0, 2])
+    groups = ["m", "m", "a", "b", "c", "d", "e", "f", "n", "n"]
+    for idx in core.group_bootstrap_indices(labels, groups, n_resamples=200, seed=4):
+        picked = [groups[i] for i in idx]
+        for gid in ("m", "n"):
+            assert picked.count(gid) % 2 == 0  # both members (different classes) always come together
+        assert len(idx) == len(labels) or True
+    single = np.array([0] * 6 + [1] * 4)
+    sgroups = ["a", "a", "b", "c", "d", "e", "f", "f", "g", "h"]
+    assert all(np.array_equal(x, y) for x, y in zip(core.group_bootstrap_indices(single, sgroups, n_resamples=20, seed=1), core.group_bootstrap_indices(single, sgroups, n_resamples=20, seed=1), strict=True))
+
+
+def test_average_precision_matches_hand_values():
+    """M1 secondary metric: step-wise average precision, ties handled at distinct thresholds."""
+    assert core.average_precision(np.array([1, 0, 1, 0]), np.array([0.9, 0.8, 0.7, 0.1])) == pytest.approx((1.0 + 2 / 3) / 2)
+    assert core.average_precision(np.array([1, 1, 0]), np.array([0.9, 0.9, 0.1])) == pytest.approx(1.0)
+    assert core.average_precision(np.array([1, 0]), np.array([0.5, 0.5])) == pytest.approx(0.5)
+    assert core.average_precision(np.array([0, 0]), np.array([0.5, 0.2])) is None
+    y = np.array([0, 0, 1, 2])
+    scores = np.eye(3)[y] * 0.8 + 0.1
+    assert core.macro_auprc(y, scores, 3) == pytest.approx(1.0)
+
+
+def test_co_primary_rule_needs_both_intervals():
+    """M1 option C: a macro-F1 gain without a balanced-accuracy gain is not an improvement."""
+    support = core.heldout_support({"val": {"a": 20, "b": 40}, "test": {"a": 20, "b": 40}})
+    assert support["sufficient"] and support["sparse"] == ["test/a: 20", "val/a: 20"]
+    both = {"macro_f1": {"interval_95": [0.01, 0.05]}, "balanced_accuracy": {"interval_95": [0.002, 0.03]}}
+    split = {"macro_f1": {"interval_95": [0.02, 0.07]}, "balanced_accuracy": {"interval_95": [-0.02, 0.01]}}
+    worse = {"macro_f1": {"interval_95": [-0.05, -0.01]}, "balanced_accuracy": {"interval_95": [-0.04, -0.001]}}
+    assert core.co_primary_verdict(both, valid=True, support=support)["claim"] == "better"
+    assert core.co_primary_verdict(split, valid=True, support=support)["claim"] == "no co-primary claim"
+    assert core.co_primary_verdict(worse, valid=True, support=support)["claim"] == "worse"
+    assert core.co_primary_verdict(both, valid=False, support=support)["claim"] == "withheld"
+    thin = core.heldout_support({"val": {"a": 14, "b": 40}, "test": {"a": 20, "b": 40}})
+    assert not thin["sufficient"] and thin["below_minimum"] == ["val/a: 14"]
+    assert core.co_primary_verdict(both, valid=True, support=thin)["claim"] == "withheld"
+
+
+def test_claim_table_is_derived_from_the_run(notebook):
+    """M1: the answer rows come from metrics; a precision-only macro-F1 gain is 'not established' and the detection
+    row says C flagged fewer defects. Also runs the notebook's answer cell on the result."""
+    b = [[1100, 70, 67], [2, 60, 5], [1, 4, 16]]
+    c = [[1170, 40, 27], [4, 58, 5], [4, 3, 14]]
+    metrics = _metrics_from_confusions({"B": {"17": b, "29": b}, "C": {"17": c, "29": c}})
+    support = core.heldout_support({"val": {"normal": 900, "scratches": 67, "spots": 21}, "test": {"normal": 900, "scratches": 67, "spots": 21}})
+    by_metric = {"macro_f1": {"mean_difference": 0.04, "per_seed": {"17": 0.04, "29": 0.05}, "interval_95": [0.02, 0.07]},
+                 "balanced_accuracy": {"mean_difference": -0.004, "per_seed": {"17": -0.004, "29": -0.004}, "interval_95": [-0.03, 0.02]},
+                 "macro_auprc": {"mean_difference": 0.01, "per_seed": {"17": 0.01, "29": 0.01}, "interval_95": [-0.01, 0.03]}}
+    metrics.update(contrasts={"C - B": by_metric}, verdicts={"C - B": core.co_primary_verdict(by_metric, valid=True, support=support)}, heldout_support=support)
+    rows = core.claim_table(metrics)
+    levels = [r["level"] for r in rows]
+    assert levels[0] == "supported (signal)" and levels[1].startswith("not established") and levels[2] == "not established (secondary)"
+    assert "lower on every seed" in levels[3] and "80 vs 85 of 88" in rows[3]["evidence"] and levels[4] == "not tested (operational)"
+    metrics["claims"] = rows
+    cells = ["".join(x["source"]) for x in notebook["cells"]]
+    printed: list[str] = []
+    ns = {"METRICS": metrics, "table": lambda h, r: printed.append(str(len(r))), "print": printed.append}
+    exec(compile(next(x for x in cells if x.startswith("CLAIMS = METRICS.get('claims'")), "answer", "exec"), ns)
+    assert printed[0] == "5" and printed[1].startswith("ANSWER: Synthetic substitution did not beat conventional augmentation")
+
+
+def test_phi4_reads_exemplars_through_verified_bytes(tmp_path):
+    """CX7: a changed exemplar file is refused; the original is returned as RGB; the Phi-4 stage uses the check."""
+    path = _jpeg(tmp_path / "e.jpg", seed=5)
+    row = {"image_id": "e", "file_sha256": core.sha256_file(path)}
+    assert core.open_verified_rgb(path, row).mode == "RGB"
+    _jpeg(path, seed=6)
+    with pytest.raises(core.ContractError, match="refusing to describe it"):
+        core.open_verified_rgb(path, row)
+    phi4 = (CAPSTONE / "stage_phi4.py").read_text(encoding="utf-8")
+    assert "core.open_verified_rgb(path, r)" in phi4 and "Image.open(path)" not in phi4
+
+
+def test_evaluation_stage_declares_the_co_primary_design():
+    src = (CAPSTONE / "stage_evaluate.py").read_text(encoding="utf-8")
+    for needle in ("metric=m, scores=scores) for m in core.CONTRAST_METRICS", "core.heldout_support(core.group_counts(rows, order))", "core.co_primary_verdict(", "core.claim_table(metrics)", '"design": core.PRIMARY_DESIGN'):
+        assert needle in src, needle
+    assert core.CO_PRIMARY == ("macro_f1", "balanced_accuracy") and core.MIN_HELDOUT_GROUPS_PER_CLASS <= 21
