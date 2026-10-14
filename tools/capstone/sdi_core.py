@@ -28,7 +28,7 @@ from PIL import Image, ImageDraw, ImageEnhance, ImageOps
 
 # %% [section] Source, constants and errors
 
-CORE_VERSION = "sdi-core/1"
+CORE_VERSION = "sdi-core/2"
 SOURCE_REPOSITORY = "https://github.com/boschresearch/The-Surface-Defect-Inspection-Dataset"
 SOURCE_COMMIT = "c6e0afe66e9dbd9d99326c986ea884ddf2aad9f8"
 ARCHIVE_NAME = "SDI_DATASET_v1.zip"
@@ -63,6 +63,13 @@ SPLIT_VERSION = "sdi-a-grouped-602020-v1"
 SPLIT_FRACTIONS = (("train", 0.6), ("val", 0.2), ("test", 0.2))
 BUDGET_BY_ROLE = (128, 64, 32)  # normal, more frequent defect, less frequent defect
 MIN_HELDOUT_PER_CLASS = 5
+# Held-out support in independent GROUPS (CX4). Below the minimum, no inferential verdict is printed; below the sparse
+# mark a warning is. Declared cuts, not statistical guarantees: below 15 groups one group moves a class's recall by
+# more than 0.06 and the percentile bootstrap has very few distinct values to resample. The canonical Bosch split has
+# 21 spot groups in validation and in test (its smallest held-out class), so it clears the minimum and is flagged sparse.
+MIN_HELDOUT_GROUPS_PER_CLASS = 15
+SPARSE_HELDOUT_GROUPS_PER_CLASS = 30
+HIGH_BIT_DEPTH_MODES = ("I;16", "I;16B", "I;16L", "I;16N", "I", "I;32", "F")
 EXEMPLARS_PER_CLASS = 3
 NORMAL = "normal"
 CLASS_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
@@ -71,6 +78,11 @@ IMAGE_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 
 class ContractError(ValueError):
     """A validation failure that names the broken contract and the corrective action."""
+
+
+class UnsupportedBitDepth(ContractError):
+    """A 16-bit, 32-bit or floating-point image. Refused rather than clipped (CX6): clipping to 0-255 can saturate the
+    image and erase a defect. Never recorded as a merely undecodable file."""
 
 
 def run_main(entry: Callable[..., None], *args: Any) -> None:
@@ -300,12 +312,13 @@ def load_gray(path: str | Path) -> tuple[Image.Image, str]:
         mode = image.mode
         if mode == "L":
             return image.copy(), mode
-        if mode in ("RGB", "RGBA", "P", "LA", "I;16", "I", "F"):
-            if mode in ("I;16", "I", "F"):
-                array = np.asarray(image, dtype=np.float64)
-                if not np.isfinite(array).all():
-                    raise ContractError(f"{path}: non-finite pixel values")
-                return Image.fromarray(np.clip(array, 0, 255).astype(np.uint8)), mode
+        if mode in HIGH_BIT_DEPTH_MODES:
+            raise UnsupportedBitDepth(
+                f"{Path(str(path)).name}: image mode {mode!r} is 16-bit, 32-bit or floating point, which this notebook does not accept "
+                "(clipping it to 8 bits could erase the defect). Convert every image to 8-bit grayscale or RGB yourself, choosing the "
+                "intensity range, for example with Pillow: Image.fromarray(np.clip((a - lo) / (hi - lo) * 255, 0, 255).astype('uint8')) "
+                "with lo/hi fixed for the whole dataset, or ImageMagick: magick in.png -depth 8 out.png; then rebuild the zip")
+        if mode in ("RGB", "RGBA", "P", "LA"):
             return image.convert("L"), mode
     raise ContractError(f"{path}: unsupported image mode {mode!r}")
 
@@ -321,6 +334,16 @@ def load_verified_gray(path: str | Path, row: Mapping[str, Any]) -> Image.Image:
     if pixel_digest(np.asarray(image)) != row["pixel_sha256"]:
         raise ContractError(f"{row['image_id']}: decoded pixels differ from split_manifest.csv; restore the original file or start a new experiment from Section 2")
     return image
+
+
+def open_verified_rgb(path: str | Path, row: Mapping[str, Any]) -> Image.Image:
+    """The image Phi-4 describes: the file's bytes must match the SHA-256 recorded in split_manifest.csv before they
+    are decoded; the model still receives the original file converted to RGB (CX7)."""
+    data = Path(path).read_bytes()
+    if sha256_bytes(data) != row["file_sha256"]:
+        raise ContractError(f"{row['image_id']}: the exemplar file at {path} no longer matches the SHA-256 recorded in split_manifest.csv; refusing to describe it. Restore the original file or start a new experiment from Section 2")
+    with Image.open(io.BytesIO(data)) as image:
+        return image.convert("RGB")
 
 
 def signature(image: Image.Image) -> np.ndarray:
@@ -350,6 +373,8 @@ def inspect_image(path: str | Path) -> dict[str, Any]:
             signature=signature(image),
             error="",
         )
+    except UnsupportedBitDepth:
+        raise  # a refusal with a conversion instruction, not a corrupt file to skip
     except Exception as exc:  # corrupt files are data to report, not a crash
         record.update(decode_ok=False, width=0, height=0, mode="", pixel_sha256="", signature=None, error=f"{type(exc).__name__}: {exc}"[:200])
     return record
@@ -442,19 +467,38 @@ def _rank(*parts: Any) -> str:
     return sha256_bytes("|".join(str(p) for p in parts).encode())
 
 
+def _class_counts(group: Mapping[str, Any]) -> dict[str, int]:
+    return dict(group["counts"]) if "counts" in group else {group["label"]: group["size"]}
+
+
 def assign_split(groups: Mapping[str, Mapping[str, Any]], *, version: str = SPLIT_VERSION, fractions: Sequence[tuple[str, float]] = SPLIT_FRACTIONS) -> dict[str, str]:
-    """Deterministic, approximately class-stratified group assignment: within each class, groups are visited in a
-    hash order and each goes to the partition with the largest relative shortfall against its target."""
+    """Deterministic, approximately class-stratified group assignment on class-count vectors. Groups are visited in
+    one hash order; a single-class group goes to the partition with the largest relative shortfall of its class
+    (exactly the per-class rule used before mixed groups were supported, so single-class splits are unchanged); a
+    mixed-class group stays whole and goes to the partition with the largest count-weighted sum of relative shortfalls
+    over its classes."""
+    names = [f[0] for f in fractions]
+    vectors = {gid: _class_counts(g) for gid, g in groups.items()}
+    totals: dict[str, int] = {}
+    for vec in vectors.values():
+        for label, n in vec.items():
+            totals[label] = totals.get(label, 0) + n
+    counts = {label: {name: 0 for name in names} for label in totals}
+
+    def shortfall(label: str, item: tuple[str, float]) -> float:
+        return (item[1] * totals[label] - counts[label][item[0]]) / (item[1] * totals[label])
+
     out: dict[str, str] = {}
-    labels = sorted({g["label"] for g in groups.values()})
-    for label in labels:
-        gids = sorted((gid for gid, g in groups.items() if g["label"] == label), key=lambda gid: _rank(version, "split", gid))
-        total = sum(groups[gid]["size"] for gid in gids)
-        counts = {name: 0 for name, _ in fractions}
-        for gid in gids:
-            name = max(fractions, key=lambda item: ((item[1] * total - counts[item[0]]) / (item[1] * total), -[f[0] for f in fractions].index(item[0])))[0]
-            out[gid] = name
-            counts[name] += groups[gid]["size"]
+    for gid in sorted(groups, key=lambda g: _rank(version, "split", g)):
+        vec = vectors[gid]
+        if len(vec) == 1:
+            label = next(iter(vec))
+            name = max(fractions, key=lambda item: (shortfall(label, item), -names.index(item[0])))[0]
+        else:
+            name = max(fractions, key=lambda item: (sum(n * shortfall(label, item) for label, n in vec.items()), -names.index(item[0])))[0]
+        out[gid] = name
+        for label, n in vec.items():
+            counts[label][name] += n
     return out
 
 
@@ -480,25 +524,33 @@ def class_order_from_counts(counts: Mapping[str, int]) -> list[str]:
 
 
 def build_split_rows(records: Sequence[dict[str, Any]], *, version: str = SPLIT_VERSION, budgets: Sequence[int] = BUDGET_BY_ROLE) -> dict[str, Any]:
-    """Exclude undecodable images and label-conflict groups, assign groups to partitions, check leakage, then
-    select the fixed real-data training budget (one image per group) and the captioning exemplars."""
+    """Exclude undecodable images and exact-image label conflicts, assign whole groups to partitions on their
+    class-count vectors, check leakage, then select the fixed real-data training budget (one image per group and
+    class) and the captioning exemplars.
+
+    Two different things are kept apart (CX3). A *label conflict* is the same decoded pixels carrying two labels:
+    neither label can be trusted, so every copy is excluded. A *mixed-class group* is an acquisition group (a declared
+    specimen or session, or near-duplicate frames) whose images legitimately carry different labels: it is kept whole
+    in one partition, never split and never excluded."""
+    labels_by_pixels: dict[str, set[str]] = {}
+    for rec in records:
+        if rec["decode_ok"]:
+            labels_by_pixels.setdefault(rec["pixel_sha256"], set()).add(rec["label"])
+    conflicts = sorted(key for key, labels in labels_by_pixels.items() if len(labels) > 1)
+    conflicting = set(conflicts)
     groups: dict[str, dict[str, Any]] = {}
     for rec in records:
         if not rec["decode_ok"]:
             rec["split"], rec["exclusion_reason"] = "excluded", "decode-failure"
             continue
-        g = groups.setdefault(rec["group_id"], {"labels": set(), "size": 0, "members": []})
-        g["labels"].add(rec["label"])
+        if rec["pixel_sha256"] in conflicting:
+            rec["split"], rec["exclusion_reason"] = "excluded", "label-conflict-duplicate"
+            continue
+        g = groups.setdefault(rec["group_id"], {"counts": {}, "size": 0, "members": []})
+        g["counts"][rec["label"]] = g["counts"].get(rec["label"], 0) + 1
         g["size"] += 1
         g["members"].append(rec)
-    conflicts = sorted(gid for gid, g in groups.items() if len(g["labels"]) > 1)
-    usable = {}
-    for gid, g in groups.items():
-        if gid in conflicts:
-            for rec in g["members"]:
-                rec["split"], rec["exclusion_reason"] = "excluded", "label-conflict-duplicate"
-        else:
-            usable[gid] = {"label": next(iter(g["labels"])), "size": g["size"], "members": g["members"]}
+    usable = groups
     assignment = assign_split(usable, version=version)
     for gid, g in usable.items():
         for rec in g["members"]:
@@ -516,12 +568,12 @@ def build_split_rows(records: Sequence[dict[str, Any]], *, version: str = SPLIT_
         rec["budget_rank"] = -1
     shortfalls = []
     for label in order:
-        train_groups = sorted((gid for gid, g in usable.items() if g["label"] == label and assignment[gid] == "train"), key=lambda gid: _rank(version, "budget", gid))
+        train_groups = sorted((gid for gid, g in usable.items() if label in g["counts"] and assignment[gid] == "train"), key=lambda gid: _rank(version, "budget", gid))
         if len(train_groups) < budget[label]:
             shortfalls.append(f"{label}: {len(train_groups)} training groups for a budget of {budget[label]}")
             continue
         for rank, gid in enumerate(train_groups[: budget[label]]):
-            rep = min(usable[gid]["members"], key=lambda r: _rank(version, "representative", r["file_sha256"]))
+            rep = min((r for r in usable[gid]["members"] if r["label"] == label), key=lambda r: _rank(version, "representative", r["file_sha256"]))
             rep["selected"], rep["budget_rank"], rep["exemplar"] = True, rank, rank < EXEMPLARS_PER_CLASS
         for split in ("val", "test"):
             n = sum(1 for r in records if r["label"] == label and r["split"] == split)
@@ -529,7 +581,26 @@ def build_split_rows(records: Sequence[dict[str, Any]], *, version: str = SPLIT_
                 shortfalls.append(f"{label}: {n} {split} images (minimum {MIN_HELDOUT_PER_CLASS})")
     if shortfalls:
         raise ContractError("insufficient independent examples under the grouped split: " + "; ".join(shortfalls) + ". Revise the versioned split design explicitly; held-out images are never borrowed and grouping is never relaxed silently.")
-    return {"class_order": order, "budget": budget, "label_conflict_groups": conflicts, "counts": counts}
+    mixed = sorted(gid for gid, g in usable.items() if len(g["counts"]) > 1)
+    return {"class_order": order, "budget": budget, "label_conflict_groups": conflicts, "mixed_class_groups": mixed, "counts": counts}
+
+
+def group_counts(rows: Sequence[Mapping[str, Any]], class_order: Sequence[str], splits: Sequence[str] = ("train", "val", "test")) -> dict[str, dict[str, int]]:
+    """Independent groups per partition and class: a group counts once for every class it holds images of."""
+    seen: dict[tuple[str, str], set[str]] = {}
+    for r in rows:
+        if r["split"] in splits:
+            seen.setdefault((r["split"], r["label"]), set()).add(r["group_id"])
+    return {s: {c: len(seen.get((s, c), ())) for c in class_order} for s in splits}
+
+
+def heldout_support(counts: Mapping[str, Mapping[str, int]], *, minimum: int = MIN_HELDOUT_GROUPS_PER_CLASS, sparse: int = SPARSE_HELDOUT_GROUPS_PER_CLASS) -> dict[str, Any]:
+    """CX4: inferential verdicts need at least `minimum` independent groups per class in validation and test; fewer
+    than `sparse` is reported as a warning."""
+    below = sorted(f"{s}/{c}: {n}" for s in ("val", "test") for c, n in counts[s].items() if n < minimum)
+    thin = sorted(f"{s}/{c}: {n}" for s in ("val", "test") for c, n in counts[s].items() if minimum <= n < sparse)
+    return {"minimum_groups_per_class": minimum, "sparse_below": sparse, "group_counts": {s: dict(counts[s]) for s in ("val", "test")},
+            "sufficient": not below, "below_minimum": below, "sparse": thin}
 
 
 SPLIT_COLUMNS = ("image_id", "relpath", "product", "label", "official_split", "group_id", "split", "selected", "budget_rank", "exemplar", "exclusion_reason", "file_sha256", "pixel_sha256", "width", "height", "mode")
@@ -565,7 +636,8 @@ BYOD_REQUIRED = ("image_id", "path", "class")
 
 def load_byod_manifest(root: str | Path) -> list[dict[str, Any]]:
     """Validate a BYOD folder: manifest.csv with image_id, path, class and an optional group column; safe relative
-    paths to existing images; exactly one `normal` class and two defect classes; groups that never span classes."""
+    paths to existing images; exactly one `normal` class and two defect classes. A group (specimen, session) may hold
+    images of several classes: it is kept whole in one partition (CX3)."""
     root = Path(root)
     manifest = root / BYOD_MANIFEST
     if not manifest.is_file():
@@ -583,7 +655,7 @@ def load_byod_manifest(root: str | Path) -> list[dict[str, Any]]:
     missing = [c for c in BYOD_REQUIRED if c not in header]
     if missing:
         raise ContractError(f"{BYOD_MANIFEST} is missing required column(s) {missing}; expected {list(BYOD_REQUIRED)} plus optional 'group'")
-    out, ids, group_labels = [], set(), {}
+    out, ids = [], set()
     base = root.resolve()
     for n, raw in enumerate(rows, start=2):
         row = {k.strip(): (v or "").strip() for k, v in raw.items() if k}
@@ -602,11 +674,8 @@ def load_byod_manifest(root: str | Path) -> list[dict[str, Any]]:
             raise ContractError(f"line {n}: image {rel!r} not found inside the BYOD folder")
         if target.suffix.lower() not in IMAGE_SUFFIXES:
             raise ContractError(f"line {n}: {rel!r} is not one of {IMAGE_SUFFIXES}")
-        if group:
-            if not IMAGE_ID_RE.match(group):
-                raise ContractError(f"line {n}: group {group!r} must match {IMAGE_ID_RE.pattern}")
-            if group_labels.setdefault(group, label) != label:
-                raise ContractError(f"line {n}: group {group!r} spans classes {group_labels[group]!r} and {label!r}; a specimen/session group must carry one label")
+        if group and not IMAGE_ID_RE.match(group):
+            raise ContractError(f"line {n}: group {group!r} must match {IMAGE_ID_RE.pattern}")
         out.append({"image_id": image_id, "path": target, "relpath": rel, "label": label, "declared_group": group, "product": "byod", "official_split": ""})
     if not out:
         raise ContractError(f"{BYOD_MANIFEST} has no rows")
@@ -889,12 +958,19 @@ def macro_f1_batch(y_true: np.ndarray, y_pred: np.ndarray, k: int) -> float:
 
 
 def group_bootstrap_indices(labels: np.ndarray, groups: Sequence[str], *, n_resamples: int, seed: int) -> list[np.ndarray]:
-    """Class-stratified group bootstrap: within each class stratum, resample its groups with replacement (same
-    group count) and take all their members. Every arm is scored on the same resamples."""
+    """Class-stratified group bootstrap: groups are stratified by the set of classes they hold (a single class, or a
+    mixed-class combination); within each stratum, resample its groups with replacement (same group count) and take
+    all their members, so a mixed-class group is never cut apart (CX3). With single-class groups this is the plain
+    per-class stratification. Every arm is scored on the same resamples."""
     labels = np.asarray(labels)
-    strata: dict[int, dict[str, list[int]]] = {}
+    members: dict[str, list[int]] = {}
+    held: dict[str, set[int]] = {}
     for i, (label, gid) in enumerate(zip(labels.tolist(), groups, strict=True)):
-        strata.setdefault(label, {}).setdefault(gid, []).append(i)
+        members.setdefault(gid, []).append(i)
+        held.setdefault(gid, set()).add(label)
+    strata: dict[tuple[int, ...], dict[str, list[int]]] = {}
+    for gid, idx in members.items():
+        strata.setdefault(tuple(sorted(held[gid])), {})[gid] = idx
     rng = np.random.default_rng([seed, 9091])
     ordered = [(label, [np.asarray(v) for _, v in sorted(g.items())]) for label, g in sorted(strata.items())]
     out = []
@@ -907,17 +983,131 @@ def group_bootstrap_indices(labels: np.ndarray, groups: Sequence[str], *, n_resa
     return out
 
 
-def paired_contrast(predictions: Mapping[tuple[str, int], np.ndarray], y_true: np.ndarray, groups: Sequence[str], *, arm: str, reference: str, seeds: Sequence[int], k: int, n_resamples: int = 1000, seed: int = 2026) -> dict[str, Any]:
-    """Mean over seeds of macro-F1(arm) - macro-F1(reference), with an approximate percentile interval from the
-    paired, class-stratified group bootstrap. Conditional on this split and this generated pool."""
-    per_seed = {s: macro_f1_batch(y_true, predictions[(arm, s)], k) - macro_f1_batch(y_true, predictions[(reference, s)], k) for s in seeds}
+def balanced_accuracy_batch(y_true: np.ndarray, y_pred: np.ndarray, k: int) -> float:
+    return metrics_from_confusion(confusion_matrix(y_true, y_pred, k), [str(i) for i in range(k)])["balanced_accuracy"]
+
+
+def average_precision(positive: np.ndarray, score: np.ndarray) -> float | None:
+    """Threshold-free area under the precision-recall curve as average precision: the sum over distinct score
+    thresholds of (recall gain) x (precision at that threshold). None when there is no positive."""
+    positive = np.asarray(positive, dtype=np.int64)
+    if positive.sum() == 0:
+        return None
+    order = np.argsort(-np.asarray(score, dtype=np.float64), kind="mergesort")
+    s, yb = np.asarray(score, dtype=np.float64)[order], positive[order]
+    tp, fp = np.cumsum(yb), np.cumsum(1 - yb)
+    last = np.r_[np.nonzero(np.diff(s))[0], len(s) - 1]
+    tp, fp = tp[last], fp[last]
+    precision, recall = tp / (tp + fp), tp / tp[-1]
+    return float(np.sum((recall - np.r_[0.0, recall[:-1]]) * precision))
+
+
+def per_class_average_precision(y_true: np.ndarray, scores: np.ndarray, class_names: Sequence[str]) -> dict[str, float | None]:
+    """One-vs-rest average precision per class from the softmax scores (uncalibrated, but only their order matters)."""
+    return {name: average_precision(np.asarray(y_true) == i, np.asarray(scores)[:, i]) for i, name in enumerate(class_names)}
+
+
+def macro_auprc(y_true: np.ndarray, scores: np.ndarray, k: int) -> float:
+    values = [v for v in per_class_average_precision(y_true, scores, [str(i) for i in range(k)]).values() if v is not None]
+    return float(np.mean(values))
+
+
+CONTRAST_METRICS = ("macro_f1", "balanced_accuracy", "macro_auprc")
+CO_PRIMARY = ("macro_f1", "balanced_accuracy")
+PRIMARY_DESIGN = {
+    "co_primary": list(CO_PRIMARY),
+    "secondary": ["macro_auprc"],
+    "decision_rule": "argmax of the linear head's logits for the co-primary metrics; macro AUPRC uses the softmax scores without a threshold",
+    "claim_rule": "C is reported better than B only if the paired 95% group-bootstrap intervals of BOTH co-primary contrasts (test macro-F1 and test balanced accuracy, mean over seeds) lie above zero; worse only if both lie below zero; otherwise no co-primary claim. Requiring both intervals is an intersection-union rule, so no multiplicity correction is applied.",
+    "why": "macro-F1 at the argmax rule can rise when a classifier simply makes fewer defect calls; balanced accuracy (mean per-class recall) cannot, so requiring both stops a precision-only shift from counting as an improvement. It adds no tuned threshold, recall target or new selection step.",
+    "selection": "unchanged: epochs and the exported arm are chosen on validation macro-F1",
+}
+
+
+def _metric_value(metric: str, y: np.ndarray, pred: np.ndarray, score: np.ndarray | None, k: int) -> float:
+    if metric == "macro_f1":
+        return macro_f1_batch(y, pred, k)
+    if metric == "balanced_accuracy":
+        return balanced_accuracy_batch(y, pred, k)
+    if metric == "macro_auprc":
+        return macro_auprc(y, score, k)
+    raise ValueError(metric)
+
+
+def paired_contrast(predictions: Mapping[tuple[str, int], np.ndarray], y_true: np.ndarray, groups: Sequence[str], *, arm: str, reference: str, seeds: Sequence[int], k: int, n_resamples: int = 1000, seed: int = 2026, metric: str = "macro_f1", scores: Mapping[tuple[str, int], np.ndarray] | None = None) -> dict[str, Any]:
+    """Mean over seeds of metric(arm) - metric(reference), with an approximate percentile interval from the paired,
+    class-stratified group bootstrap (the same resamples for every metric and arm). Conditional on this split and
+    this generated pool. `macro_auprc` needs `scores`."""
+    def value(a: str, s: int, idx: np.ndarray | None = None) -> float:
+        sl = slice(None) if idx is None else idx
+        return _metric_value(metric, y_true[sl], predictions[(a, s)][sl], None if scores is None else scores[(a, s)][sl], k)
+
+    per_seed = {s: value(arm, s) - value(reference, s) for s in seeds}
     observed = float(np.mean(list(per_seed.values())))
     draws = []
     for idx in group_bootstrap_indices(y_true, groups, n_resamples=n_resamples, seed=seed):
-        yt = y_true[idx]
-        draws.append(np.mean([macro_f1_batch(yt, predictions[(arm, s)][idx], k) - macro_f1_batch(yt, predictions[(reference, s)][idx], k) for s in seeds]))
+        draws.append(np.mean([value(arm, s, idx) - value(reference, s, idx) for s in seeds]))
     lo, hi = np.percentile(draws, [2.5, 97.5])
-    return {"contrast": f"{arm} - {reference}", "mean_difference": observed, "per_seed": {str(s): float(v) for s, v in per_seed.items()}, "interval_95": [float(lo), float(hi)], "resamples": n_resamples, "bootstrap_seed": seed, "fraction_above_zero": float(np.mean(np.asarray(draws) > 0))}
+    return {"contrast": f"{arm} - {reference}", "metric": metric, "mean_difference": observed, "per_seed": {str(s): float(v) for s, v in per_seed.items()}, "interval_95": [float(lo), float(hi)], "resamples": n_resamples, "bootstrap_seed": seed, "fraction_above_zero": float(np.mean(np.asarray(draws) > 0))}
+
+
+def interval_side(interval: Sequence[float]) -> str:
+    lo, hi = interval
+    return "above zero" if lo > 0 else ("below zero" if hi < 0 else "includes zero")
+
+
+def co_primary_verdict(by_metric: Mapping[str, Mapping[str, Any]], *, valid: bool, support: Mapping[str, Any]) -> dict[str, Any]:
+    """The pre-declared claim for one contrast (see PRIMARY_DESIGN). Withheld when the comparison is invalid or the
+    held-out group support is below the minimum (CX4)."""
+    if not valid:
+        return {"claim": "withheld", "reason": "comparison invalid (held-out overlap after freezing)"}
+    if not support["sufficient"]:
+        return {"claim": "withheld", "reason": "held-out group support below the predeclared minimum of " + str(support["minimum_groups_per_class"]) + " groups per class: " + ", ".join(support["below_minimum"])}
+    sides = {m: interval_side(by_metric[m]["interval_95"]) for m in CO_PRIMARY}
+    if all(s == "above zero" for s in sides.values()):
+        claim = "better"
+    elif all(s == "below zero" for s in sides.values()):
+        claim = "worse"
+    else:
+        claim = "no co-primary claim"
+    return {"claim": claim, "sides": sides, "reason": "; ".join(f"{m}: interval {s}" for m, s in sides.items()), "sparse_warning": list(support["sparse"])}
+
+
+def detection_counts(confusion: Sequence[Sequence[int]]) -> dict[str, int]:
+    """Collapse a confusion matrix (rows true, columns predicted; normal first) to normal versus any defect."""
+    normal, defect = confusion[0], confusion[1:]
+    return {"defects": int(sum(sum(r) for r in defect)), "flagged_defects": int(sum(sum(r[1:]) for r in defect)),
+            "normals": int(sum(normal)), "false_alarms": int(sum(normal[1:])), "correct_subtype": int(sum(defect[i][i + 1] for i in range(len(defect))))}
+
+
+def claim_table(metrics: Mapping[str, Any], *, arm: str = "C", reference: str = "B") -> list[dict[str, str]]:
+    """The rows of the notebook's bounded answer, derived from this run's metrics (never from quoted numbers)."""
+    name = f"{arm} - {reference}"
+    if name not in metrics["contrasts"]:
+        return []
+    c = metrics["contrasts"][name]
+    verdict = metrics["verdicts"][name]
+    rows = []
+    per_seed = list(c["macro_f1"]["per_seed"].values())
+    consistent = all(v > 0 for v in per_seed) or all(v < 0 for v in per_seed)
+    rows.append({"claim": f"the generated pool changed what the classifier learned ({name} in macro-F1 has one sign on every seed)",
+                 "evidence": "per-seed macro-F1 change " + ", ".join(f"{v:+.4f}" for v in per_seed),
+                 "level": "supported (signal)" if consistent else "not shown"})
+    prim = "; ".join(f"{m} {c[m]['mean_difference']:+.4f} [{c[m]['interval_95'][0]:+.4f}, {c[m]['interval_95'][1]:+.4f}]" for m in CO_PRIMARY)
+    level = {"better": f"supported: {arm} better on both co-primary metrics", "worse": f"{arm} worse on both co-primary metrics",
+             "no co-primary claim": "not established (the co-primary intervals do not agree)", "withheld": "withheld: " + verdict["reason"]}[verdict["claim"]]
+    rows.append({"claim": f"{arm} beats {reference} under the pre-declared co-primary rule (macro-F1 AND balanced accuracy)", "evidence": prim, "level": level})
+    sec = c["macro_auprc"]
+    sec_level = "withheld" if verdict["claim"] == "withheld" else {"above zero": "supports " + arm + " (secondary, threshold-free)", "below zero": "favours " + reference + " (secondary, threshold-free)", "includes zero": "not established (secondary)"}[interval_side(sec["interval_95"])]
+    rows.append({"claim": f"{arm} ranks images better without a decision threshold (macro AUPRC)", "evidence": f"macro AUPRC {sec['mean_difference']:+.4f} [{sec['interval_95'][0]:+.4f}, {sec['interval_95'][1]:+.4f}]", "level": sec_level})
+    det = {a: [detection_counts(metrics["per_run"][a][s]["confusion"]) for s in c["macro_f1"]["per_seed"]] for a in (arm, reference)}
+    diffs = [x["flagged_defects"] - y["flagged_defects"] for x, y in zip(det[arm], det[reference], strict=True)]
+    trend = "higher on every seed" if all(d > 0 for d in diffs) else ("lower on every seed" if all(d < 0 for d in diffs) else "mixed or equal across seeds")
+    rows.append({"claim": f"{arm} flags more defective surfaces (normal versus any defect)",
+                 "evidence": "defects flagged per seed " + ", ".join(f"{x['flagged_defects']} vs {y['flagged_defects']} of {x['defects']}" for x, y in zip(det[arm], det[reference], strict=True)),
+                 "level": f"descriptive only, no interval: {arm} {trend}"})
+    rows.append({"claim": "synthetic defects improve visual inspection in practice", "evidence": "no error-cost or operating-point objective, no calibration, one product, image groups rather than specimens", "level": "not tested (operational)"})
+    return rows
 
 
 def softmax(logits: np.ndarray) -> np.ndarray:

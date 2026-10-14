@@ -35,6 +35,31 @@ REVISIONS = [
         "PYTHONPATH/PYTHONHOME/PYTHONSTARTUP are dropped from child processes. Linux x86_64 only. Stage code unchanged.",
         "previous_blob": "c64f21cc081d68aae0955167d2dfb432e5f45866",
     },
+    {
+        "date": "2026-10-12",
+        "change": "capstone review BSA2",
+        "summary": "Guided reading of C - B through per-class precision/recall and balanced accuracy, claim levels and a bounded "
+        "answer to the title question (BSA2-M1, provisional option A); fixed untuned shared recipe labelled; measured resources "
+        "and status (m1); notebook_kind, use notice, Problem statement and Data context (m2); BMVC 2022 dataset citation, "
+        "CC BY-SA 4.0 link, pinned FLUX reference, ResNet-18 licence (m3); contrast verdicts gated on comparison_valid (m4); "
+        "a stage refusal (exit 2) stops with one message and no traceback (m5); official split and id naming explained (m6). "
+        "Stage code unchanged.",
+        "previous_blob": "84061cc7dfdfe270cd75840c1d48d22d198d3fba",
+    },
+    {
+        "date": "2026-10-13",
+        "change": "owner decisions BSA2-M1=C, CX3=B, CX4=A, CX6=A, CX7=A",
+        "summary": "Pre-declared co-primary comparison (test macro-F1 AND balanced accuracy, both paired group-bootstrap intervals "
+        "required) with macro AUPRC as a threshold-free secondary; mixed-class acquisition groups kept whole (split on "
+        "class-count vectors, bootstrap stratified by class set) and separated from exact-image label conflicts; minimum of 15 "
+        "held-out groups per class with verdicts withheld below it and a warning below 30; 16-bit/32-bit/float images refused; "
+        "Phi-4 exemplar bytes verified against the manifest. Stage code changed; previous hosted runs cover the previous design only.",
+        "previous_blob": "7a98b10e095031ccbed2ea13d3122e4fe9a52dc6",
+    },
+]
+KEPT_DEVIATIONS = [
+    {"spec_ids": ["3.4 notebook_spec"], "kept": "declares NOTEBOOK_SPEC 2.2, not 2.5", "reason": "maintainer ruling for the 2026-10-12 capstone round: the 2.4/2.5 write-up and kind layer is adopted without re-declaring the spec version"},
+    {"spec_ids": ["DOC14", "DOC16"], "kept": "APA 7 references with author-year citations, not ACM/IEEE numbered", "reason": "maintainer ruling for the 2026-10-12 capstone round; tests/test_capstone.py checks APA author-year citations against the reference list"},
 ]
 SECTION_MARK = re.compile(r"^# %% \[section\] (.+)$", re.M)
 
@@ -81,13 +106,17 @@ def checkpoint(question: str, answer: str) -> str:
 OPENING = f"""
 # DIMER Guided Notebook: Can Synthetic Defects Improve Visual Inspection?
 
-**Profile:** `E2E` · **Mode:** `GUIDED` · **Notebook spec:** DIMER Notebook Specification 2.2 · **Status:** candidate (the combined Colab T4 run has not yet been recorded)
+**Profile:** `E2E` · **Mode:** `GUIDED` · **Kind:** `CAPSTONE` · **Notebook spec:** DIMER Notebook Specification 2.2 · **Status:** candidate. Earlier revisions passed recorded Colab CLI runs on a fresh Colab T4 (revision `439c34f`, notebook blob `84061cc7`, 2026-10-04; revision `802ce28`, blob `7a98b10e`, 2026-10-12). This revision redesigns the primary comparison and changes stage code (evaluation, grouping and input checks), so those runs cover the previous design only; this revision has not had its own hosted run, and the bring-your-own-data path has no hosted run yet.
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)]({COLAB})
 
+> **⚠️ Notice.** For research, training and evaluation only. Not validated for production, clinical, diagnostic or safety-critical use, and not a validated industrial inspection, quality-control or safety system: do not use its classifier or its conclusions to accept or reject real parts. Running this notebook downloads third-party model weights and datasets under their own licenses (see the repository's model card and the attribution record in Section 12) and uses compute on your own Colab or Kaggle account. Data you bring stays in your runtime, and you are responsible for having the right to use it. Results here are tutorial evidence, not benchmarks. Everything is provided "as is", without warranty of any kind. To the maximum extent permitted by law, the maintainers and the DIMER platform accept no liability for its use.
+
+### Problem statement
+
 This notebook runs a controlled experiment. You will take a small, fixed set of labelled photographs of manufactured surfaces from the Bosch Surface Defect Inspection (SDI) dataset, ask **Phi-4-multimodal-instruct** to describe what it sees, compile those descriptions into bounded text prompts, let **FLUX.1 [schnell]** generate candidate *scratch* and *spot* images from the prompts, and then test whether substituting those generated images into training improves a simple classifier on **real held-out photographs**, compared with conventional augmentation.
 
-Success means a reproducible, interpretable comparison. A negative or null result is a valid outcome: the notebook does not require the synthetic images to help.
+Success means a reproducible, interpretable comparison. A negative or null result is a valid outcome: the notebook does not require the synthetic images to help. Section 10 ends with a bounded answer to the title question, with the level of evidence behind each part of it.
 
 **Run all:** the default path downloads and verifies the dataset, audits it, freezes a grouped split, fits a majority baseline and a real-only classifier, describes training exemplars with Phi-4, generates 64 candidates with FLUX, fits three matched classifier arms with three seeds, freezes the experiment, scores the real test set once, exports the selected classifier, and rebuilds it in a fresh process to prove the export reproduces the same outputs. It needs no token, login, upload, restart, repository clone or DIMER service.
 
@@ -95,7 +124,7 @@ Success means a reproducible, interpretable comparison. A negative or null resul
 
 **By the end of this notebook you will be able to:**
 
-- **explain** why accuracy misleads under class imbalance and **compare** classifiers with macro-F1;
+- **explain** why accuracy misleads under class imbalance and **compare** classifiers with macro-F1 and balanced accuracy, and why a pre-declared rule needs both;
 - **identify** which parts of a model-written description are observed and which are guessed;
 - **distinguish** a generated image's *intended* label from a verified annotation, and visual plausibility from measured usefulness;
 - **diagnose** leakage risks: duplicate images across partitions, test-set peeking, and unequal training budgets;
@@ -108,11 +137,24 @@ Success means a reproducible, interpretable comparison. A negative or null resul
 AUDIENCE = """
 ## Before you start
 
-**Who this is for.** You can open a Colab notebook, run cells, and read basic Python. You have met image classification before. Class imbalance, augmentation, held-out evaluation and macro-F1 are introduced here. The dataset is an international manufacturing dataset; any local relevance is by analogy, not because it contains Philippine observations.
+**Who this is for.** You can open a Colab notebook, run cells, and read basic Python. No machine-learning background is assumed: the primer below and the glossary introduce the terms, and class imbalance, augmentation, held-out evaluation and macro-F1 are explained where they are first used. The dataset is an international manufacturing dataset; any local relevance is by analogy, not because it contains Philippine observations.
+
+### A short primer: classification, and how it is scored
+
+**Supervised classification.** A *classifier* takes an image and outputs one of a fixed set of *labels* (here `normal`, `scratches`, `spots`). It learns from training images whose labels are given. This notebook splits the learning in two. A pretrained network (ResNet-18) turns each image into 512 numbers, its *features*; that network is *frozen* (never changed). A *linear head* (one weight per feature and class, plus one bias per class) is then fitted to turn those numbers into one score per class, a *logit*; the class with the largest logit is the prediction (the *argmax rule*). Fitting repeats small updates that reduce a *loss*, a penalty for confident wrong answers. *Validation* images, never used for fitting, decide which round of updates to keep; *test* images are scored once, at the end.
+
+**Precision and recall from a confusion matrix.** Suppose 100 test surfaces, 90 normal and 10 scratched, and a classifier that calls 12 of them `scratches`:
+
+| true class ↓ / predicted → | normal | scratches |
+|---|---|---|
+| normal (90) | 86 | 4 |
+| scratches (10) | 2 | 8 |
+
+*Recall* for scratches is 8 / 10 = 0.80: how many real scratches it found. *Precision* for scratches is 8 / 12 = 0.67: how many of its scratch calls were right. *F1* combines the two (2 × 0.80 × 0.67 / (0.80 + 0.67) ≈ 0.73). Macro-F1, used throughout, averages F1 over the classes with equal weight.
 
 **Runtime.** A Colab **T4 GPU** runtime (Runtime → Change runtime type → T4 GPU) with at least 15 GB of GPU memory, on Linux x86_64 (Colab, Kaggle or Linux Jupyter; the isolated environments use Linux wheels). The runtime check in Section 1 stops with an instruction if no suitable GPU is attached.
 
-**Resource budget (estimates, not measurements).** About 53 GB of downloads (dataset 1.6 GB, Phi-4 11.2 GB, FLUX 33.7 GB, ResNet-18 0.05 GB, Python wheels about 6 GB) and about 55 GB of free disk with the default of deleting each model's weights after use. Model time is expected to be well under 90 minutes on a T4, excluding downloads. The notebook measures and records the actual download bytes, stage times, peak host memory and peak GPU memory; a later hosted run replaces these estimates.
+**Resource budget.** Measured on the recorded Colab CLI run of revision `439c34f` (notebook blob `84061cc7`) on a fresh Colab T4 (15,360 MiB GPU, 12.7 GiB host RAM), 2026-10-04: 2,106 s (35 min) session wall time, of which 1,833 s in the model stages; peak GPU memory in use 11,529 MiB; lowest available host memory 8,909 MiB (during the FLUX stage). These figures come from that run and were not re-measured for this revision; its stage changes (evaluation metrics, grouping, input checks) are not expected to change resource use much, but that is not measured. Estimates, not measured by that run: about 53 GB of downloads (dataset 1.6 GB, Phi-4 11.2 GB, FLUX 33.7 GB, ResNet-18 0.05 GB, Python wheels about 6 GB) and about 55 GB of free disk with the default of deleting each model's weights after use. The notebook measures and records your run's download bytes, stage times, peak host memory and peak GPU memory.
 
 ### How to use this notebook
 
@@ -152,7 +194,7 @@ ROADMAP = """
 QUESTION = """
 ## The question, and your prediction
 
-> Under a fixed real-data budget, classifier, class-sampling policy and training budget, does substituting synthetic defect examples into training improve **real-test macro-F1** compared with conventional augmentation?
+> Under a fixed real-data budget, classifier, class-sampling policy and training budget, does substituting synthetic defect examples into training improve **both real-test macro-F1 and real-test balanced accuracy** compared with conventional augmentation?
 
 The experiment trains a small classifier on top of frozen image features in three **arms**, each with the same number of optimiser updates, the same batch composition and the same random draws per seed:
 
@@ -164,6 +206,8 @@ The experiment trains a small classifier on top of frozen image features in thre
 | **C** synthetic augmentation | as B, but each defect slot draws a generated image with probability 0.5 | tests the generated pool |
 
 The **primary contrast is C − B**; B − A is context.
+
+**The pre-declared rule (co-primary).** Two metrics are primary, both at the argmax decision rule: test **macro-F1** and test **balanced accuracy** (the mean of per-class recall). C is reported better than B only if the paired 95% group-bootstrap intervals of **both** contrasts (mean over seeds) lie above zero, worse only if both lie below zero; anything else is *no co-primary claim*. Requiring both is an intersection-union rule, so no multiplicity correction is applied. **Why this design.** Macro-F1 at the argmax rule can rise when a classifier simply makes fewer defect calls (its defect precision rises while it finds no more defects); balanced accuracy cannot rise that way, because it weights every class's recall equally. A rule that needs both cannot be met by a precision-only shift. It adds no tuned threshold, no recall target and no extra selection step. Matched-recall operating points were considered and not used: they need a recall target and per-arm thresholds chosen on about 21 validation spot images, which would make the primary result depend on a few borderline images. **Secondary, threshold-free:** macro **AUPRC** (the mean over classes of one-vs-rest average precision from the softmax scores), with the same paired bootstrap; it says whether C ranks images better at any threshold. **Unchanged:** epochs and the exported arm are still selected on validation macro-F1. **Support:** inferential verdicts are withheld when validation or test holds fewer than 15 independent groups of any class (Section 9).
 
 **Make a prediction now, before any model runs.** Write down (1) whether C − B will be positive, zero or negative, (2) roughly how large, and (3) which class you expect synthetic images to help most. You will compare against the evidence in Section 10.
 
@@ -188,9 +232,10 @@ Output: per-image predictions, macro-F1 per arm/seed, paired C − B contrast wi
 GLOSSARY = details("Glossary (open when a term is unfamiliar)", """
 - **Class imbalance** — one class (here `normal`, about 93% of images) vastly outnumbers others. A classifier that always says `normal` scores high accuracy while finding no defects.
 - **Macro-F1** — compute F1 (the harmonic mean of precision and recall) separately for each class, then average the classes with equal weight. A missed rare class hurts it as much as a missed common one (Sokolova & Lapalme, 2009).
-- **Balanced accuracy** — the average of per-class recall.
+- **Balanced accuracy** — the average of per-class recall. A classifier cannot raise it just by making fewer calls of a rare class, because that lowers the rare class's recall.
+- **Average precision / AUPRC** — the area under the precision-recall curve of one class against the rest, computed from scores without choosing a threshold; *macro AUPRC* averages it over the classes. It measures ranking, not the decisions at the argmax rule.
 - **Augmentation** — label-preserving transformations of training images (here: horizontal flip, mild brightness and contrast) that add variation without new photographs.
-- **Synthetic augmentation** — adding generated images to training (Trabucco et al., 2023; Wang et al., 2023).
+- **Synthetic augmentation** — adding generated images to training (Trabucco et al., 2023; Wang et al., 2022).
 - **Intended label** — the class named in the prompt that produced a generated image. Nobody has checked that the image shows that defect.
 - **Held-out evaluation** — scoring on images that were never used for fitting or for any choice. **Validation** images are used for choices (epoch, exported arm); **test** images are used once, after everything is frozen.
 - **Group / leakage** — near-identical images (duplicates, consecutive frames) must stay in the same partition; otherwise the test set contains near-copies of training images and scores are inflated.
@@ -205,7 +250,7 @@ S1_INTRO = """
 
 The configuration cell holds every value a reader can change. The defaults run the canonical experiment; the optional fields are explained in Section 13. The Phi-4 checkpoint ships its model code as Python files inside the model repository, which `transformers` executes. `ALLOW_PHI4_REMOTE_CODE` is set to `True` so that Run all proceeds; that code is pinned to one immutable revision and each file's SHA-256 is verified before it is imported (Section 4 explains the boundary). Set it to `False` to stop before Phi-4 runs.
 
-**BYOD contract (read before choosing `byod`).** A zip containing `manifest.csv` with columns `image_id`, `path`, `class` and optional `group`, plus the images (`.jpg`, `.jpeg`, `.png`, sides 64–4096 px). Exactly three classes: one named `normal` and two defect classes (lowercase names such as `dent`, `stain`). Paths are relative to the manifest, without `..`. A `group` (for example a specimen or session id) must never span two classes. After grouping, each class needs at least 128 / 64 / 32 independent training groups (normal / more frequent defect / less frequent defect) and at least 5 images in each of validation and test. Data stays inside this runtime; the only transmission is the images you upload to the runtime yourself. **Do not upload confidential, restricted, personal or regulated images unless you are authorised to process them in Colab.**
+**BYOD contract (read before choosing `byod`).** A zip containing `manifest.csv` with columns `image_id`, `path`, `class` and optional `group`, plus the images (`.jpg`, `.jpeg`, `.png`, sides 64–4096 px, **8-bit** grayscale, RGB or palette; 16-bit, 32-bit and floating-point images are refused with a conversion instruction, because clipping them to 8 bits could erase a defect). Exactly three classes: one named `normal` and two defect classes (lowercase names such as `dent`, `stain`). Paths are relative to the manifest, without `..`. A `group` (for example a specimen or session id) may hold images of several classes, such as a session with normal and defective parts: the whole group stays in one partition and the bootstrap resamples it whole. Only the *same picture* carrying two labels (identical decoded pixels) is excluded as a label conflict. After grouping, each class needs at least 128 / 64 / 32 independent training groups (normal / more frequent defect / less frequent defect) and at least 5 images in each of validation and test; with fewer than **15 independent groups** of a class in validation or test the experiment still runs, but its test verdicts are withheld. Data stays inside this runtime; the only transmission is the images you upload to the runtime yourself. **Do not upload confidential, restricted, personal or regulated images unless you are authorised to process them in Colab.**
 """
 
 CONFIG = '''
@@ -418,6 +463,27 @@ from IPython.display import Image as IPImage
 from IPython.display import Markdown, display
 
 STAGE_LOG = {}
+
+
+class StageRefused(RuntimeError):
+    """A stage refused its input or a frozen check and named the rule. Run all stops here, but IPython shows only this
+    message (through _render_traceback_), not a Python traceback."""
+
+    def __init__(self, name, rule):
+        self.stage, self.rule = name, rule
+        super().__init__(f"stage '{name}' refused: {rule}")
+
+    def _render_traceback_(self):
+        if self.stage == 'byod_check':
+            step = 'Fix the zip (the message names the line, column, class, group or limit) and run the BYOD check cell again.'
+        elif self.stage == 'data' and globals().get('DATA_SOURCE') == 'byod':
+            step = ('Nothing after this cell can run on this data. Fix the zip (the message names the line, column, class, group or limit), '
+                    'check it with the BYOD check cell in Section 13.3, then Run all again.')
+        else:
+            step = 'Nothing after this cell can run. Find the message in Troubleshooting (Section 13.4); never skip or edit the check.'
+        return [f"REFUSED  stage '{self.stage}': {self.rule}", f"What to do: {step}"]
+
+
 CHILD_ENV = {k: v for k, v in os.environ.items() if k not in ('HF_TOKEN', 'HUGGING_FACE_HUB_TOKEN', 'PYTHONPATH', 'PYTHONHOME', 'PYTHONSTARTUP')}  # no credential; no kernel Python settings
 CHILD_ENV.update(MPLBACKEND='Agg', PYTHONHASHSEED='0', HF_HOME=str(WORK_ROOT / 'hf_home'), HF_HUB_DISABLE_TELEMETRY='1', HF_HUB_DISABLE_PROGRESS_BARS='1',
                  TOKENIZERS_PARALLELISM='false', CUBLAS_WORKSPACE_CONFIG=':4096:8', PYTHONUNBUFFERED='1',
@@ -459,7 +525,11 @@ def run_stage(name, env, script, *args):
     monitor = threading.Thread(target=sample, daemon=True)
     monitor.start()
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=CHILD_ENV, cwd=BASE)
+    refusal = None
     for line in proc.stdout:
+        if line.startswith('CONTRACT FAILURE:'):
+            refusal = line.split(':', 1)[1].strip()  # shown once, in the refusal message below
+            continue
         print(line, end='')
     _, status, usage = os.wait4(proc.pid, 0)
     proc.returncode = os.waitstatus_to_exitcode(status)
@@ -472,7 +542,11 @@ def run_stage(name, env, script, *args):
     (WORK / 'state' / 'stage_log.json').write_text(json.dumps(STAGE_LOG, indent=2))
     print(f"\\n[{name}] {record['seconds']} s | peak child RSS {record['peak_child_rss_mib']} MiB | peak GPU in use {record['peak_gpu_used_mib']} MiB | "
           f"lowest host memory available {record['min_host_available_mib']} MiB | disk free {record['disk_free_gb_after']} GB")
+    if proc.returncode == 2 and refusal:  # sdi_core.run_main: a ContractError prints one CONTRACT FAILURE line and exits 2
+        raise StageRefused(name, refusal)
     if proc.returncode != 0:
+        if refusal:
+            print(f'CONTRACT FAILURE: {refusal}')
         raise RuntimeError(f"stage '{name}' failed with exit code {proc.returncode}. Read the last lines above, then see Troubleshooting in Section 13.")
     return record
 
@@ -503,11 +577,17 @@ def show(name, width=None):
 S2_INTRO = """
 ## 2 · The dataset: acquisition, audit and a frozen grouped split  <sub>(data practice)</sub>
 
-**Dataset card.** The Bosch Surface Defect Inspection (SDI) dataset (source repository pinned at commit `c6e0afe6…`) contains grayscale photographs of three products (A, B, C), each labelled `normal`, `scratches` or `spots`. It was released with the DT-GAN study (Wang et al., 2023); this notebook is a new experiment, not a reproduction of that paper's results. The repository declares **CC BY-SA 4.0**: attribution is required and adapted dataset material you redistribute must carry the same licence. The dataset's licence does not automatically apply to the notebook code, the models, or generated images; Section 12 records each separately.
+### Data context
+
+**Dataset card.** The Bosch Surface Defect Inspection (SDI) dataset ([source repository](https://github.com/boschresearch/The-Surface-Defect-Inspection-Dataset/tree/c6e0afe66e9dbd9d99326c986ea884ddf2aad9f8), pinned at commit `c6e0afe6…`) contains grayscale photographs of three products (A, B, C), each labelled `normal`, `scratches` or `spots`. It was released with the DT-GAN study, which the dataset's maintainers ask users to cite as its BMVC 2022 paper (Wang et al., 2022); this notebook is a new experiment, not a reproduction of that paper's results. The repository declares **CC BY-SA 4.0** ([licence](https://creativecommons.org/licenses/by-sa/4.0/)): attribution is required and adapted dataset material you redistribute must carry the same licence. The dataset's licence does not automatically apply to the notebook code, the models, or generated images; Section 12 records each separately.
+
+**Labels.** These are **source-provided image-level labels**: an image's class is the folder it sits in. The source says each image is labelled with its defect type but does not document who annotated the images or how the classes were defined, so the annotation procedure is unknown here. Each image carries exactly one label (the single-label assumption): an image showing both a scratch and a spot can carry only one of them. Removing contradictory duplicates (below) does not verify the remaining labels.
 
 **Acquisition.** The archive is a 1,647,097,112-byte Git LFS object. The data stage streams it with timeouts, resumes on interruption, verifies its byte count and SHA-256 before extraction, and refuses path traversal, symlinks, non-image files and anything beyond an expanded-size ceiling set from the inspected archive. It never substitutes another dataset.
 
 **Audit and split.** Before any model sees an image, the stage inventories every file, compares the counts with the published notes (documented counts are expectations, measured counts are facts), finds exact decoded-pixel duplicates and near duplicates, and forms groups. Groups, not images, are assigned to train / validation / test (60/20/20, approximately class-stratified, deterministic). The source supplies no specimen or session identifiers, so groups approximate shared capture and this is an **exploratory image-group benchmark**, not a claim about independent physical specimens. Only product A is used. From the training partition, a fixed budget of 128 normal, 64 scratch and 32 spot images is selected (one per group); the rest of the training partition stays unused.
+
+**Why not the source's own split.** The source's official split (its train / val / test folders) is not used, for two reasons. It covers only the defect images: normal images have no official split, so a three-class split cannot be taken from it. And it does not keep duplicates together: pixel-identical copies sit in different official partitions (see *What to notice* below). This notebook therefore assigns whole groups to its own partitions, and the printout maps each official assignment to the new one. An image id such as `A_sp_test_00011` keeps the source's folder name, so `_test_`, `_val_` or `_train_` in an id records the source's original assignment, not this notebook's partition.
 
 **Question for this stage:** do the measured counts match the documentation, and could the same picture end up in both training and test?
 """
@@ -528,6 +608,12 @@ print(f"label-conflict duplicates excluded: {g['label_conflict_groups']} groups 
 print('similar pairs (corr >= 0.95) that cross partitions, by label pair:', g['similar_pairs_crossing_partitions']['by_label_pair'])
 order = DATA['class_order']
 table(['partition', *order], [[s, *[DATA['split']['counts'].get(s, {}).get(c, 0) for c in order]] for s in ('train', 'val', 'test', 'excluded')])
+GC = DATA['split']['group_counts']
+table(['partition', *[f'{c}: images / groups' for c in order]],
+      [[s, *[f"{DATA['split']['counts'].get(s, {}).get(c, 0)} / {GC[s][c]}" for c in order]] for s in ('train', 'val', 'test')])
+HS = DATA['split']['heldout_support']
+print(f"mixed-class groups kept whole: {g['mixed_class_groups']} | held-out group support: minimum {HS['minimum_groups_per_class']} per class, "
+      f"sufficient: {HS['sufficient']}" + (f" (below: {HS['below_minimum']})" if HS['below_minimum'] else '') + (f"; sparse (under {HS['sparse_below']}): {HS['sparse']}" if HS['sparse'] else ''))
 print(f"selected training budget: {DATA['selected']}; unused training images: {DATA['unused_training_images']:,}")
 print(f"split manifest SHA-256 {DATA['split']['manifest_sha256'][:16]}...; matches the reference audit: {DATA['split']['matches_reference']}")
 show('training_examples.png')
@@ -538,9 +624,9 @@ S2_NOTICE = """
 **What to notice.**
 
 - The defect counts match the published notes, but the normal counts do not (product A has 66 fewer normal images than documented; product C about 1,490 fewer). The notebook reports this; it does not guess why.
-- Five pairs of images are pixel-for-pixel identical yet labelled `scratches` in one copy and `spots` in the other, and several of those pairs sit in *different* official partitions. Those ten images are excluded as label conflicts: neither label can be trusted, and keeping them would put the same picture in two partitions.
+- Five pairs of images are pixel-for-pixel identical yet labelled `scratches` in one copy and `spots` in the other, and several of those pairs sit in *different* official partitions. Those ten images are excluded as label conflicts: neither label can be trusted, and keeping them would put the same picture in two partitions. A label conflict means *identical pixels* with two labels; a group of *different* images that hold different classes (possible in your own data, for example one session) is not a conflict and is kept whole.
 - The near-duplicate threshold (correlation 0.98 of 32 × 32 thumbnails) is a declared cut, not a natural boundary; the printout shows how many pairs sit just below it and how many similar pairs cross partitions. Most crossing pairs are normal/normal, because these surfaces share one texture.
-- The test set has only about 21 spot images. Every spot metric later rests on those few pictures.
+- The test set has only about 21 spot images. Every spot metric later rests on those few pictures. The second table counts **groups** as well as images: the bootstrap in Section 9 resamples groups, so a class with few test groups carries less independent evidence than its image count suggests. The notebook predeclares a minimum of 15 independent groups per class in validation and in test: below it, Section 9 prints the numbers but withholds every verdict; below 30 it warns that the class is sparse. Both are declared cuts, not guarantees. The Bosch spot class (about 21 groups in each held-out partition) clears the minimum and is flagged sparse.
 - `matches the reference audit: True` means your split is byte-identical to the one this notebook was written against. `False` means grouping or assignment changed (for example a different image decoder); the run continues with its own frozen manifest and records the difference.
 """
 
@@ -552,7 +638,7 @@ S2_CHECK = checkpoint(
 S3_INTRO = """
 ## 3 · Baselines first: majority class and a real-only classifier  <sub>(core concept)</sub>
 
-Before any generated image exists, it is worth knowing what "good" looks like. The feature stage turns each selected training image into a 512-number vector with a frozen ImageNet ResNet-18 (He et al., 2016), plus four fixed augmented views of each image for the conventional arm; validation images get one deterministic vector each. Preprocessing is the same everywhere: grayscale, letterbox to 224 × 224 without cropping, replicate to three channels, ImageNet normalisation.
+Before any generated image exists, it is worth knowing what "good" looks like. The feature stage turns each selected training image into a 512-number vector with a frozen ImageNet ResNet-18 (He et al., 2016; weights `timm/resnet18.tv_in1k`, BSD-3-Clause), plus four fixed augmented views of each image for the conventional arm; validation images get one deterministic vector each. Preprocessing is the same everywhere: grayscale, letterbox to 224 × 224 without cropping, replicate to three channels, ImageNet normalisation.
 
 Then a **preview** fits the linear head for arm A only (real images, no augmentation) and scores it on **validation**. The majority baseline always predicts `normal`.
 
@@ -573,7 +659,7 @@ table(['arm', 'seed', 'val accuracy', 'val balanced acc.', 'val macro-F1', *[f'r
 """
 
 S3_NOTICE = """
-**What to notice.** The majority baseline's accuracy is about 0.93 while its macro-F1 is about 0.32 (F1 of roughly 0.96 for `normal` and 0 for both defects, averaged). High accuracy with zero defect recall is exactly the failure an inspection system cannot afford. The real-only head trades some `normal` accuracy for defect recall. Look at the augmentation sheet: a flip or a ±10% brightness/contrast change leaves every scratch and spot visible, which is the evidence that these transforms preserve labels. The three seeds of arm A differ only in the head's initial weights and the order of training draws, so their spread is a first look at noise that has nothing to do with the method.
+**What to notice.** The majority baseline's accuracy is about 0.93 while its macro-F1 is about 0.32 (F1 of roughly 0.96 for `normal` and 0 for both defects, averaged). High accuracy with zero defect recall is exactly the failure an inspection system cannot afford. The real-only head trades some `normal` accuracy for defect recall. Look at the augmentation sheet: in these examples a flip or a ±10% brightness/contrast change leaves the scratch and the spot visible. That the transforms preserve labels is a task-specific **assumption** supported by examples, not a check of every image: a faint mark could fade under lower contrast. On your own data, look at a broader training-only sample, including faint defects, before relying on it. The three seeds of arm A differ only in the head's initial weights and the order of training draws, so their spread is a first look at noise that has nothing to do with the method.
 
 These are validation numbers from the preview. The canonical arms are fitted again in Section 8 with identical settings, and only Section 9 touches the test set.
 """
@@ -592,7 +678,7 @@ The fixed instruction asks for visible texture, illumination and the shape of an
 
 > Describe only what is visible in this grayscale close-up photograph of a surface, in at most three short sentences. Mention the texture, the illumination, and the shape and size of any visible mark. If you cannot tell what the material is, write 'material: unknown'. Do not guess the alloy, the manufacturing process or how severe any mark is.
 
-**Trust boundary.** The checkpoint `microsoft/Phi-4-multimodal-instruct` at the immutable revision `93f923e1…` implements its model, configuration and processor in five Python files inside the model repository, and `transformers 4.48.2` has no built-in implementation, so `trust_remote_code=True` is unavoidable. The stage refuses to run unless `ALLOW_PHI4_REMOTE_CODE` is `True`, pins every file (weights, configuration, tokenizer and the five code files) by SHA-256, and verifies them before `transformers` imports anything. Pinning bounds *which* code runs; it does not make the code safe by itself. The model is MIT-licensed. Its weights (11.2 GB) are deleted after this stage by default.
+**Trust boundary.** The checkpoint `microsoft/Phi-4-multimodal-instruct` at the immutable revision `93f923e1…` implements its model, configuration and processor in five Python files inside the model repository, and `transformers 4.48.2` has no built-in implementation, so `trust_remote_code=True` is unavoidable. The stage refuses to run unless `ALLOW_PHI4_REMOTE_CODE` is `True`, pins every file (weights, configuration, tokenizer and the five code files) by SHA-256, and verifies them before `transformers` imports anything. Each exemplar photograph is also checked against the SHA-256 recorded in `split_manifest.csv` immediately before Phi-4 reads it (the model still receives the original file as RGB); a changed file is refused. Pinning bounds *which* code runs; it does not make the code safe by itself. The model is MIT-licensed. Its weights (11.2 GB) are deleted after this stage by default.
 """
 
 S4_RUN = """
@@ -603,6 +689,8 @@ table(['class', '#', 'image', 'tokens', 'stop reason', 'description'], [[r['labe
 
 S4_NOTICE = """
 **What to notice.** Read each description and sort its claims into three bins: *observed* (a line, a bright blob, horizontal banding, even lighting), *inferred but plausible* (a "scratch" where a thin bright line is visible), and *guessed* (a material, a process, a cause, a severity). Descriptions of `normal` images sometimes report a mark, and defect descriptions sometimes miss one; the model was not told the label. The `stop reason` column says how each description ended: `end_of_sequence` means the model finished; `max_new_tokens` means it was cut off at the 96-token limit (a description can use all 96 tokens and still end on its own, so the token count alone does not show truncation). Greedy decoding makes the text repeatable for the same model and inputs, not correct.
+
+**About the `_test_` ids.** In the Bosch run, two spot exemplars are `A_sp_test_00011` and `A_sp_test_00019`. The `_test_` is the source's folder name (Section 2), not this notebook's partition: both are in this notebook's **training** partition. Exemplars are drawn only from the selected training images, the data stage refuses any split in which a group crosses partitions, and the Phi-4 stage itself refuses to describe an image that is not a selected training image. No validation or test image of this experiment reaches Phi-4.
 """
 
 S4_CHECK = checkpoint(
@@ -674,7 +762,7 @@ S6_CHECK = checkpoint(
 S7_INTRO = """
 ## 7 · Synthetic features and the synthetic-to-training audit  <sub>(evaluation practice)</sub>
 
-Each eligible candidate is converted to grayscale, letterboxed from 512 px to 224 px and passed through the same frozen ResNet-18, with four fixed augmented views, exactly as the real images were. Before any fitting, every candidate's thumbnail is compared with every **training-partition** image: a correlation of 0.98 or more would mean FLUX reproduced a real training photograph. Matches are reported, not used to filter.
+Each eligible candidate is converted to grayscale, letterboxed from 512 px to 224 px and passed through the same frozen ResNet-18, with four fixed augmented views, exactly as the real images were. Before any fitting, every candidate's thumbnail is compared with every **training-partition** image: a correlation of 0.98 or more is a **potential near-duplicate flag** that needs inspection by eye. A 32 × 32 thumbnail correlation cannot prove that FLUX reproduced a photograph (it discards fine detail), and a low value does not prove independence. Flags are reported, not used to filter.
 """
 
 S7_RUN = """
@@ -684,7 +772,7 @@ print(f"highest candidate-to-training correlation: {fmt(AUDIT['max_correlation']
 """
 
 S7_NOTICE = """
-**What to notice.** A text-to-image model that never saw these photographs is not expected to reproduce one, so the highest correlation should sit well below 0.98. It is still worth checking, because a generator trained on web images may have seen public datasets; the notebook cannot rule out pretraining overlap for Phi-4, FLUX or ResNet-18.
+**What to notice.** The photographs were never supplied to FLUX as generation inputs (it received only the six text prompts), so a flag is not expected and the highest correlation should sit well below 0.98. It is still worth checking: whether FLUX, Phi-4 or ResNet-18 saw this public dataset during pretraining is unknown. The same screen runs against validation and test images after the freeze (Section 9), where any flag marks the comparison invalid; that is a deliberately conservative rule, not proof of memorisation.
 """
 
 S8_INTRO = """
@@ -696,7 +784,11 @@ This is the controlled comparison. For each seed (17, 29, 43), `slot_schedule` (
 - **B** uses one of the real image's four fixed augmented views;
 - **C** does the same as B, except that a **defect** slot whose coin is below 0.5 uses a synthetic candidate's view instead. Normal slots are always real.
 
-So every arm sees the same number of updates, the same class balance and the same head initialisation per seed. C does not get more training; it gets a different distribution of defect examples. The head is fitted with AdamW (learning rate 0.001, weight decay 0.0001), batch 32, on the CPU with deterministic algorithms. After each epoch it is scored on **validation**; the epoch with the highest validation macro-F1 is kept (the earlier epoch wins a tie). Among the arms fitted with the canonical seed 17, the one with the highest validation macro-F1 is chosen for export (ties go to A, then B, then C).
+So every arm runs the same **maximum** budget of updates, with the same class balance and the same head initialisation per seed. C does not get a larger budget; it gets a different distribution of defect examples. An "epoch" here is a fixed block of 32 updates whose slots are drawn **with replacement**, not one complete pass through the training images. The head is fitted with AdamW (learning rate 0.001, weight decay 0.0001), batch 32, on the CPU with deterministic algorithms.
+
+**A fixed, untuned shared recipe.** These settings (AdamW at learning rate 0.001, a maximum of 30 epochs, synthetic probability 0.5) were set in advance and are shared by every arm; they were not tuned per arm, and no arm got a search over them. Every arm also uses the same checkpoint-selection policy, below, so the heads that are finally evaluated may have trained for different numbers of epochs (in the recorded run, for example, C with seed 29 kept epoch 2 of 30). The comparison therefore asks which training source does better *under this one recipe and selection policy*, not which is best when each is tuned, and not at equal training duration.
+
+After each epoch it is scored on **validation**; the epoch with the highest validation macro-F1 is kept (the earlier epoch wins a tie). Among the arms fitted with the canonical seed 17, the one with the highest validation macro-F1 is chosen for export (ties go to A, then B, then C).
 
 Then the experiment is **frozen**: `experiment_config.json` records every setting and the SHA-256 of every input (split, prompts, generation manifest, features, heads, the thumbnail signatures used by the overlap audit) and of the code that defines preprocessing, fitting, evaluation and export (the shared core and every stage script). The test, export and reload stages refuse to run if any of them changes, and every held-out image is re-checked against its recorded digests before it is scored.
 
@@ -719,7 +811,7 @@ S8_NOTICE = """
 
 S8_CHECK = checkpoint(
     "Why not simply add the 64 synthetic images to the training set of arm B and train for the same number of epochs?",
-    "Adding images changes several things at once: the number of defect examples, the class balance, and (with a fixed number of epochs) the number of updates. Any difference in the result could come from any of these. Substituting synthetic images into a fixed slot schedule keeps updates, batch composition, class prior and random draws identical, so a difference between C and B can be attributed to the change in the defect-image distribution.",
+    "Adding images changes several things at once: the number of defect examples, the class balance, and (with a fixed number of epochs) the number of updates. Any difference in the result could come from any of these. Substituting synthetic images into a fixed slot schedule keeps updates, batch composition, class prior and random draws identical, so a difference between C and B can be attributed to the change in the defect-image distribution, under this fixed recipe. That says where a difference comes from, not what it consists of: Section 10 shows which classes and which kinds of errors changed.",
 )
 
 S9_INTRO = """
@@ -727,8 +819,10 @@ S9_INTRO = """
 
 The test stage first verifies the frozen record, then extracts features for the test partition (never seen until now), scores every arm and seed once, and computes:
 
-- **macro-F1** (primary), balanced accuracy, accuracy, and per-class precision, recall, F1 and support for each arm and seed;
-- the **C − B** contrast (primary) and **B − A** (context): the mean over seeds of the macro-F1 difference, with an approximate 95% interval from 1,000 **paired, class-stratified group bootstrap** resamples of the test set (every arm is scored on the same resamples; groups, not images, are resampled);
+- **macro-F1** and **balanced accuracy** (co-primary), **macro AUPRC** (secondary, threshold-free), accuracy, and per-class precision, recall, F1, average precision and support for each arm and seed;
+- the **C − B** contrast (primary) and **B − A** (context) for each of the three metrics: the mean over seeds of the difference, with an approximate 95% interval from 1,000 **paired, class-stratified group bootstrap** resamples of the test set (every arm and metric is scored on the same resamples; whole groups, not images, are resampled, and a group holding several classes is resampled whole);
+- the **pre-declared co-primary claim** (Section 3): *better* only if both co-primary intervals lie above zero;
+- **held-out group support**: with fewer than 15 independent groups of any class in validation or test, every verdict is withheld;
 - after freezing, an **overlap audit** of every synthetic candidate against validation and test images and a check that no exact duplicate crosses partitions. A consequential match marks the comparison invalid; it is never quietly removed.
 
 The decision rule is argmax over the head's logits. Softmax scores in `predictions.csv` are uncalibrated and are not probabilities of a defect.
@@ -739,23 +833,43 @@ Scoring the test set again after changing something, and picking the better resu
 S9_RUN = """
 run_stage('evaluate', 'lab', 'stage_evaluate.py')
 METRICS = load('metrics.json')
+SUPPORT = METRICS['heldout_support']
 print('test counts:', METRICS['test_counts'], '| comparison valid:', METRICS['comparison_valid'], METRICS['validity_note'])
+print('held-out groups per class (validation / test): ' + ', '.join(f"{c} {SUPPORT['group_counts']['val'][c]} / {SUPPORT['group_counts']['test'][c]}" for c in order)
+      + f" | predeclared minimum {SUPPORT['minimum_groups_per_class']}, sparse below {SUPPORT['sparse_below']}")
+if not METRICS['comparison_valid']:
+    print('INVALID COMPARISON - not evidence: a held-out overlap was found after freezing. The numbers below are shown for the record only, without a verdict.')
+if not SUPPORT['sufficient']:
+    print('VERDICTS WITHHELD: fewer independent held-out groups than the predeclared minimum for ' + ', '.join(SUPPORT['below_minimum']) + '. The numbers below are descriptive only.')
+elif SUPPORT['sparse']:
+    print('WARNING, sparse support: ' + ', '.join(SUPPORT['sparse']) + ' groups. Intervals that rest on these classes are rough.')
 rows = []
 for arm, summ in METRICS['summary'].items():
     rows.append([METRICS['arms'][arm], *[fmt(summ['macro_f1']['per_seed'][str(s)]) for s in RECORD['seeds']], fmt(summ['macro_f1']['mean']),
-                 f"{fmt(summ['macro_f1']['min'])}–{fmt(summ['macro_f1']['max'])}", fmt(summ['balanced_accuracy']['mean']), fmt(summ['accuracy']['mean'])])
-table(['arm', *[f'macro-F1 seed {s}' for s in RECORD['seeds']], 'mean', 'range', 'balanced acc. (mean)', 'accuracy (mean)'], rows)
+                 fmt(summ['balanced_accuracy']['mean']), fmt(summ['macro_auprc']['mean']), fmt(summ['accuracy']['mean'])])
+table(['arm', *[f'macro-F1 seed {s}' for s in RECORD['seeds']], 'macro-F1 (mean)', 'balanced acc. (mean)', 'macro AUPRC (mean)', 'accuracy (mean)'], rows)
+LABELS = {'macro_f1': 'macro-F1 (co-primary)', 'balanced_accuracy': 'balanced accuracy (co-primary)', 'macro_auprc': 'macro AUPRC (secondary, threshold-free)'}
 for name, c in METRICS['contrasts'].items():
-    lo, hi = c['interval_95']
-    verdict = 'the interval includes zero: no clear difference in this run' if lo <= 0 <= hi else ('the interval is above zero' if lo > 0 else 'the interval is below zero')
-    print(f"{name}: mean difference {c['mean_difference']:+.4f} (per seed {', '.join(f'{v:+.4f}' for v in c['per_seed'].values())}); "
-          f"approximate 95% interval [{lo:+.4f}, {hi:+.4f}] -> {verdict}")
+    verdict = METRICS['verdicts'][name]
+    rows = []
+    for m, label in LABELS.items():
+        lo, hi = c[m]['interval_95']
+        if not METRICS['comparison_valid']:
+            side = 'INVALID - not evidence, no verdict'
+        elif verdict['claim'] == 'withheld':
+            side = 'withheld'
+        else:
+            side = 'includes zero' if lo <= 0 <= hi else ('above zero' if lo > 0 else 'below zero')
+        rows.append([label, f"{c[m]['mean_difference']:+.4f}", ', '.join(f'{v:+.4f}' for v in c[m]['per_seed'].values()), f'[{lo:+.4f}, {hi:+.4f}]', side])
+    print(f'{name}, mean over seeds:')
+    table(['metric', 'mean difference', 'per seed', 'approx. 95% interval', 'interval'], rows)
+    print(f"{name} pre-declared co-primary claim: {verdict['claim'].upper()} ({verdict['reason']})")
 show('macro_f1_by_arm.png')
 show('confusion_matrices.png')
 """
 
 S9_NOTICE = """
-**What to notice.** Read the per-seed columns before the mean: if the sign of C − B changes between seeds, the mean hides disagreement. Compare the interval's width with the difference itself. The interval is **conditional on this split and this generated pool**: it reflects which test groups happened to be drawn, not what would happen with a different split, a new set of 64 generated images or another factory. In the confusion matrices, look at where each arm's errors go: false alarms on `normal`, missed defects, or scratch/spot confusion.
+**What to notice.** Read the per-seed columns before the mean: if the sign of C − B changes between seeds, the mean hides disagreement. Compare the interval's width with the difference itself. The interval is **conditional on this split and this generated pool**: it reflects which test groups happened to be drawn, not what would happen with a different split, a new set of 64 generated images or another factory. In the confusion matrices, look at where each arm's errors go: false alarms on `normal`, missed defects, or scratch/spot confusion. An interval above zero in one co-primary metric is not a claim on its own: the pre-declared rule needs both. When the two disagree, Section 10 shows what the difference consists of.
 """
 
 S9_CHECK = checkpoint(
@@ -780,6 +894,61 @@ for arm in METRICS['per_run']:
 table(['arm (canonical seed)', 'class', 'precision', 'recall', 'F1', 'support', 'predicted'], rows)
 undefined = {a: r[str(RECORD['selection']['seed'])]['undefined'] for a, r in METRICS['per_run'].items() if r[str(RECORD['selection']['seed'])]['undefined']}
 print('undefined metrics (no predictions of that class):', undefined or 'none')
+if 'B' in METRICS['per_run'] and 'C' in METRICS['per_run']:
+    seed = str(RECORD['selection']['seed'])
+    pb, pc = METRICS['per_run']['B'][seed]['per_class'], METRICS['per_run']['C'][seed]['per_class']
+    print(f'C beside B, canonical seed {seed} only (C / B):')
+    for c in order:
+        print(f"    {c:<10} recall {fmt(pc[c]['recall'])} / {fmt(pb[c]['recall'])} | precision {fmt(pc[c]['precision'])} / {fmt(pb[c]['precision'])} | predicted {pc[c]['predicted']} / {pb[c]['predicted']} | test images {pc[c]['support']}")
+    seeds = [str(s) for s in RECORD['seeds']]
+    present = [c for c in order if pc[c]['support']]
+    rows, changes = [], []
+    for s in seeds:
+        fb, fc = METRICS['per_run']['B'][s]['per_class'], METRICS['per_run']['C'][s]['per_class']
+        d = [fc[c]['f1'] - fb[c]['f1'] for c in present]
+        changes.append(d)
+        rows.append([s, *[f'{x:+.4f}' for x in d], f'{sum(d) / len(d):+.4f}', f"{METRICS['per_run']['C'][s]['macro_f1'] - METRICS['per_run']['B'][s]['macro_f1']:+.4f}"])
+    mean = [sum(col) / len(col) for col in zip(*changes)]
+    rows.append(['mean over seeds', *[f'{x:+.4f}' for x in mean], f'{sum(mean) / len(mean):+.4f}', f"{METRICS['summary']['C']['macro_f1']['mean'] - METRICS['summary']['B']['macro_f1']['mean']:+.4f}"])
+    table(['arm', *[f'average precision {c} (mean over seeds)' for c in order], 'macro AUPRC (mean)'],
+          [[a, *[fmt(sum(METRICS['per_run'][a][s]['average_precision'][c] for s in seeds) / len(seeds)) for c in order], fmt(METRICS['summary'][a]['macro_auprc']['mean'])] for a in ('B', 'C')])
+    print('Macro-F1 change C − B, decomposed exactly: the per-class F1 changes, averaged over classes, then over seeds.')
+    table(['seed', *[f'F1 change {c}' for c in present], 'mean of class changes', 'macro-F1 change'], rows)
+
+    def detection(cm):
+        # Collapse the 3-class confusion matrix (rows true, columns predicted; normal first) to normal vs any defect.
+        normal, defect = cm[0], cm[1:]
+        caught = sum(sum(r[1:]) for r in defect)
+        return caught, sum(sum(r) for r in defect), sum(normal[1:]), sum(normal), sum(defect[i][i + 1] for i in range(len(defect)))
+
+    rows = []
+    for arm in [a for a in ('A', 'B', 'C') if a in METRICS['per_run']]:
+        for s in seeds:
+            caught, defects, alarms, normals, subtype = detection(METRICS['per_run'][arm][s]['confusion'])
+            rows.append([arm, s, f'{caught} / {defects} = {caught / defects:.3f}', f'{alarms} / {normals} = {alarms / normals:.3f}', f'{subtype} / {caught}'])
+    print('Normal versus any defect (subtype ignored), and subtype accuracy among the defects that were flagged:')
+    table(['arm', 'seed', 'defect sensitivity (flagged as any defect)', 'normal false-alarm rate', 'correct subtype among flagged defects'], rows)
+"""
+
+S10_INTERPRET = f"""
+### Reading C − B: where did the difference come from?
+
+The pre-declared rule (Section 3) already guards the headline: C counts as better only if **both** macro-F1 and balanced accuracy improve. The tables above show *why* the two metrics agree or disagree. Read them in this order:
+
+1. **The decomposition table.** C − B in macro-F1 is exactly the average of the per-class F1 changes, first over classes, then over seeds. It shows which classes carry the difference, and whether they carry it on every seed. Do not explain the three-seed mean with the canonical seed's per-class lines alone: one seed can behave unlike the average.
+2. **Normal versus any defect.** For inspection, the first question is whether a defective surface is flagged at all. *Defect sensitivity* is the share of defect images flagged as any defect; the *normal false-alarm rate* is the share of normal images flagged. Compare them per seed for B and C. If C flags fewer defects but also raises fewer false alarms, macro-F1 can rise while balanced accuracy does not: that is the pattern the co-primary rule refuses to count as an improvement.
+3. **Subtype.** Telling scratches from spots is a different task from detecting a defect. A scratch that moves from a `spots` prediction to `scratches` raises scratch recall without flagging one more defective surface.
+4. **Average precision.** Macro AUPRC ranks images by score without a threshold. If C − B is positive in AUPRC but not in balanced accuracy, C's scores may order images better while the argmax rule turns that into fewer calls rather than more found defects; a chosen operating point could change the picture, but this notebook does not choose one.
+
+Recall changes can cancel across classes inside balanced accuracy, so balanced accuracy is read together with the per-class tables, not instead of them.
+
+Keep three claim levels apart:
+
+- **Signal:** the generated pool changed what the classifier learned (a consistent difference on every seed shows this).
+- **Comparator:** C beats B *under the pre-declared co-primary rule, on this split, this generated pool and this fixed, untuned shared recipe*. This is what the paired intervals test.
+- **Operational usefulness:** C would make a better inspection system. This run cannot show it: that needs an explicit error-cost or operating-point objective (for example a target defect sensitivity), calibrated scores, and more than one product and split.
+
+{checkpoint("Your run shows C − B with a macro-F1 interval above zero, a balanced-accuracy interval that includes zero, and C flagging fewer defects than B on every seed. What do you report?", "No co-primary claim: under the pre-declared rule an improvement needs both intervals above zero. The tables say what happened instead: C made fewer defect calls, which raised precision and macro-F1, while it flagged fewer defective surfaces, so balanced accuracy did not improve. Report the comparator-level result as not established, describe the trade (fewer false alarms, fewer defects flagged) as descriptive evidence from this split and pool, and say that operational value is not tested.")}
 """
 
 S10_NOTICE = f"""
@@ -792,13 +961,37 @@ S10_NOTICE = f"""
 Complete these sentences in your own words, using only numbers printed above:
 
 1. **Task:** *On product A of the Bosch SDI dataset (or: on my own dataset, described by its source and classes), with 128 / 64 / 32 real training images and a frozen ResNet-18 with a linear head, we compared …*
-2. **Principal result:** *Mean test macro-F1 was … for A, … for B and … for C; C − B was … (approximate 95% interval …), with per-seed differences of …*
+2. **Principal result:** *Mean test macro-F1 was … for A, … for B and … for C; C − B was … (approximate 95% interval …), with per-seed differences of …; C − B in balanced accuracy was … (interval …), so the co-primary claim is …; macro AUPRC C − B was …; the per-class F1 changes that carry the macro-F1 change were …; defect sensitivity (normal versus any defect) was … for B and … for C*
 3. **Baseline / reference:** *The majority baseline scored accuracy … but macro-F1 …*
 4. **Important failure mode or uncertainty:** *Most remaining errors were …; the spot class rests on … test images; …*
 5. **Limitations:** *One grouped split of one product without specimen metadata; one generated pool with intended, unverified labels; frozen models in 4-bit; no calibration; …*
 6. **What would change my mind:** *…*
 
 Your prediction from the start: was it right? What in the evidence would have to differ for the opposite conclusion?
+"""
+
+S10_ANSWER = """
+### What this run shows: a bounded answer to the title question
+
+*Can synthetic defects improve visual inspection?* Write your own conclusion first. The table printed by the next cell is computed from this run's `metrics.json` by the evaluation stage (`claim_table` in the shared core); nothing in it is typed in, so it answers for whatever data you ran, Bosch or your own. Each row names its evidence and the level of claim it supports: *supported*, *not established*, *descriptive only* or *not tested*. A withheld verdict (invalid comparison, or fewer than 15 held-out groups of a class) is printed as withheld.
+
+**Why the design changed (quoted, not re-run).** The recorded Colab CLI T4 run of revision `802ce28` (notebook blob `7a98b10e`, 2026-10-12), which used the previous design (macro-F1 alone) and was not re-run under this one reported a mean C − B of +0.0443 in macro-F1 (interval [+0.0193, +0.0671]) while C flagged fewer defect images than B on every seed (80, 75 and 81 against 82, 82 and 83 of 88) and raised fewer false alarms. Those numbers are from that run's printed output and are shown only to explain the change. Under the co-primary rule, a macro-F1 gain of that kind is not counted as an improvement unless balanced accuracy improves too.
+"""
+
+S10_ANSWER_RUN = """
+CLAIMS = METRICS.get('claims', [])
+if CLAIMS:
+    table(['claim', 'evidence in this run', 'level'], [[r['claim'], r['evidence'], r['level']] for r in CLAIMS])
+    verdict = METRICS['verdicts']['C - B']
+    answers = {
+        'better': 'On this split, this generated pool and this recipe, synthetic substitution beat conventional augmentation on both co-primary metrics (macro-F1 and balanced accuracy).',
+        'worse': 'On this split, this generated pool and this recipe, synthetic substitution did worse than conventional augmentation on both co-primary metrics.',
+        'no co-primary claim': 'Synthetic substitution did not beat conventional augmentation under the pre-declared rule: the macro-F1 and balanced-accuracy intervals do not both lie above zero, so a change in one metric alone is not counted as an improvement.',
+        'withheld': 'No verdict: ' + verdict['reason'] + '.',
+    }
+    print('ANSWER: ' + answers[verdict['claim']] + ' Whether synthetic defects improve inspection in practice is not tested here: that needs an explicit error-cost or operating-point objective.')
+else:
+    print('Arm C was not run (generation shortfall), so this run gives no answer to the title question.')
 """
 
 S11_INTRO = """
@@ -850,7 +1043,11 @@ summary = {
     'split_sha256': DATA['split']['manifest_sha256'], 'split_matches_reference': DATA['split']['matches_reference'],
     'generation': STATUS, 'phi4_guided_prompts': sum(p['phi4_guided'] for p in PROMPTS), 'prompts': len(PROMPTS),
     'test_macro_f1_mean': {a: s['macro_f1']['mean'] for a, s in METRICS['summary'].items()},
-    'contrasts': {k: {'mean_difference': v['mean_difference'], 'interval_95': v['interval_95'], 'per_seed': v['per_seed']} for k, v in METRICS['contrasts'].items()},
+    'test_balanced_accuracy_mean': {a: s['balanced_accuracy']['mean'] for a, s in METRICS['summary'].items()},
+    'test_macro_auprc_mean': {a: s['macro_auprc']['mean'] for a, s in METRICS['summary'].items()},
+    'design': METRICS['design'],
+    'contrasts': {k: {m: {'mean_difference': v['mean_difference'], 'interval_95': v['interval_95'], 'per_seed': v['per_seed']} for m, v in by.items()} for k, by in METRICS['contrasts'].items()},
+    'verdicts': METRICS['verdicts'], 'heldout_support': METRICS['heldout_support'],
     'comparison_valid': METRICS['comparison_valid'], 'exported': RECORD['selection'], 'reload_parity': PARITY,
     'frozen_record_sha256': RECORD['record_sha256'], 'stages': STAGE_LOG, 'download_bytes': download_bytes,
     'peak_gpu_allocated_gib': {'phi4': PHI4_STATE['peak_gpu_allocated_gib'], 'flux_encoders': FLUX_STATE['encoder_peak_gpu_gib'], 'flux_transformer': FLUX_STATE['transformer_peak_gpu_gib']},
@@ -873,6 +1070,8 @@ limitations = [
     '- One generated pool of 32 candidates per defect class from fixed seeds. Generated labels are the prompt\'s intended labels and were not validated by anyone. Results may differ for another pool.',
     '- Phi-4 and FLUX run frozen in 4-bit (NF4); every number is the 4-bit models\'. ' + ('Pretraining overlap of Phi-4, FLUX or ResNet-18 with this public dataset cannot be excluded.' if DATA_SOURCE == 'bosch' else 'If your images are, or resemble, publicly available images, pretraining overlap of Phi-4, FLUX or ResNet-18 with them cannot be excluded.'),
     '- The bootstrap interval is approximate and conditional on this split and pool; it does not include training or generation variability.',
+    f"- Held-out groups per class (validation / test): {METRICS['heldout_support']['group_counts']}; predeclared minimum {METRICS['heldout_support']['minimum_groups_per_class']}." + (' Verdicts were withheld: ' + ', '.join(METRICS['heldout_support']['below_minimum']) + '.' if not METRICS['heldout_support']['sufficient'] else '') + (' Sparse: ' + ', '.join(METRICS['heldout_support']['sparse']) + '.' if METRICS['heldout_support']['sparse'] else ''),
+    '- The co-primary rule (macro-F1 and balanced accuracy) was declared in advance; epochs and the exported arm are still selected on validation macro-F1.',
     '- Scores are softmax of uncalibrated logits under an argmax rule; no deployment threshold was chosen or validated.',
     *(['- Documented dataset counts differ from the measured archive for normal images.'] if DATA_SOURCE == 'bosch' else []),
     f"- {len(G['label_conflict_images'])} images in {G['label_conflict_groups']} label-conflict duplicate groups were excluded.",
@@ -886,9 +1085,9 @@ if not METRICS['comparison_valid']:
     limitations.append('- ' + METRICS['validity_note'])
 (OUT / 'limitations.md').write_text('\n'.join(limitations) + '\n')
 if DATA_SOURCE == 'bosch':
-    dataset_terms = ('`split_manifest.csv` and the figures that show dataset images are adapted dataset material: if you redistribute them, credit the source above and apply CC BY-SA 4.0.\n\n'
-                     'Cite the dataset\'s accompanying paper: Wang, R., Hoppe, S., Monari, E., & Huber, M. F. (2023). Defect Transfer GAN: Diverse defect synthesis for data augmentation. https://doi.org/10.48550/arXiv.2302.08366')
-    dataset_row = '| Dataset | Bosch Surface Defect Inspection dataset, https://github.com/boschresearch/The-Surface-Defect-Inspection-Dataset at commit c6e0afe66e9dbd9d99326c986ea884ddf2aad9f8, archive SHA-256 d33ea340151cdf909f3807a37e00d335c66eb8960b0c2eb568fd9fc75d96fa7c | CC BY-SA 4.0 (attribution; share-alike for adapted material) |'
+    dataset_terms = ('`split_manifest.csv` and the figures that show dataset images are adapted dataset material: if you redistribute them, credit the source above and apply CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/).\n\n'
+                     'Cite the dataset as its maintainers ask, as the BMVC 2022 paper: Wang, R., Hoppe, S., Monari, E., & Huber, M. F. (2022). Defect Transfer GAN: Diverse defect synthesis for data augmentation. British Machine Vision Conference (BMVC 2022). https://api.semanticscholar.org/CorpusID:256900681 (preprint: https://doi.org/10.48550/arXiv.2302.08366)')
+    dataset_row = '| Dataset | Bosch Surface Defect Inspection dataset, https://github.com/boschresearch/The-Surface-Defect-Inspection-Dataset at commit c6e0afe66e9dbd9d99326c986ea884ddf2aad9f8, archive SHA-256 d33ea340151cdf909f3807a37e00d335c66eb8960b0c2eb568fd9fc75d96fa7c | CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/ (attribution; share-alike for adapted material) |'
 else:
     dataset_terms = ('The dataset was supplied by the user. Its terms are set by its owner and are not determined by this notebook; `split_manifest.csv` and the figures '
                      'that show its images carry those terms. No Bosch dataset material was used in this run.')
@@ -917,9 +1116,13 @@ print('=' * 100)
 print(f"DATA        {DATA_SOURCE}: split {DATA['split']['manifest_sha256'][:12]}... (reference match: {DATA['split']['matches_reference']}), budget {DATA['selected']}")
 print(f"PROMPTS     {summary['phi4_guided_prompts']} of {len(PROMPTS)} Phi-4-guided | GENERATION usable {STATUS['usable']} complete={STATUS['complete']}")
 print('TEST MACRO-F1 (mean over seeds) ' + ', '.join(f'{a}={v:.4f}' for a, v in summary['test_macro_f1_mean'].items()))
-for name, c in METRICS['contrasts'].items():
-    print(f"CONTRAST    {name}: {c['mean_difference']:+.4f}, approx. 95% interval [{c['interval_95'][0]:+.4f}, {c['interval_95'][1]:+.4f}]")
 print(f"VALIDITY    comparison valid: {METRICS['comparison_valid']} | smoke run: {RECORD['smoke_run']}")
+print(f"SUPPORT     held-out groups sufficient: {METRICS['heldout_support']['sufficient']} (minimum {METRICS['heldout_support']['minimum_groups_per_class']} per class)" + (f"; sparse: {', '.join(METRICS['heldout_support']['sparse'])}" if METRICS['heldout_support']['sparse'] else ''))
+for name, by in METRICS['contrasts'].items():
+    label = '' if METRICS['comparison_valid'] else ' (INVALID - not evidence)'
+    for metric, c in by.items():
+        print(f"CONTRAST    {name} {metric}{label}: {c['mean_difference']:+.4f}, approx. 95% interval [{c['interval_95'][0]:+.4f}, {c['interval_95'][1]:+.4f}]")
+    print(f"VERDICT     {name} co-primary claim: {METRICS['verdicts'][name]['claim']} ({METRICS['verdicts'][name]['reason']})")
 print(f"EXPORT      arm {RECORD['selection']['arm']} seed {RECORD['selection']['seed']} | reload parity {PARITY['passed']} (max diff {PARITY['max_abs_logit_difference']:.1e}, same decisions {PARITY['same_predictions']}) | new-image inference {PARITY['new_image_inference']['status']}")
 print(f"RESOURCES   model stages {summary['model_time_seconds_excluding_installs']} s; wall {summary['wall_seconds_since_configuration']} s; "
       f"peak GPU in use {max(r['peak_gpu_used_mib'] for r in STAGE_LOG.values())} MiB; peak child RSS {max(r['peak_child_rss_mib'] for r in STAGE_LOG.values())} MiB; "
@@ -982,7 +1185,7 @@ else:
 S13_BYOD = """
 ### 13.3 Bring your own data
 
-The BYOD path runs the **whole** experiment on your images, not just inference: validation, grouping and split, the budget, Phi-4 descriptions, prompts using your defect class names, FLUX generation, the three arms, validation selection, freezing, one test evaluation, export and reload. The contract is in Section 1. To check a zip first without running any model, set `BYOD_CHECK_ZIP` to its path and run the next cell; it applies the same extraction, manifest, image, grouping, split and budget rules and reports the first broken rule. To run the experiment, set `DATA_SOURCE = 'byod'` and `BYOD_ZIP_PATH` (or leave the path empty to get an upload dialog), then Run all. Outputs go to `outputs/byod_capstone/`. If your manifest has no `group` column, grouping falls back to duplicate detection and the same limited interpretation applies as for Bosch.
+The BYOD path runs the **whole** experiment on your images, not just inference: validation, grouping and split, the budget, Phi-4 descriptions, prompts using your defect class names, FLUX generation, the three arms, validation selection, freezing, one test evaluation, export and reload. The contract is in Section 1. To check a zip first without running any model, set `BYOD_CHECK_ZIP` to its path and run the next cell; it applies the same extraction, manifest, image, grouping, split and budget rules and reports the first broken rule. To run the experiment, set `DATA_SOURCE = 'byod'` and `BYOD_ZIP_PATH` (or leave the path empty to get an upload dialog), then Run all. Outputs go to `outputs/byod_capstone/`. If your manifest has no `group` column, grouping falls back to duplicate detection and the same limited interpretation applies as for Bosch. Before running, check on a broader sample of your training images, including faint defects, that a horizontal flip and a ±10% brightness or contrast change keep each defect visible; the conventional arm assumes they do. Record how your labels were made and how each class is defined.
 """
 
 S13_BYOD_RUN = """
@@ -1007,13 +1210,15 @@ S13_TROUBLE = """
 | `hash mismatch` / `uv wheel ... SHA-256` | a substituted or truncated download | re-run the environment cell; never remove `--require-hashes` or the uv pin |
 | `Linux x86_64 only` | macOS, Windows or ARM runtime | use Colab, Kaggle or a Linux x86_64 Jupyter host |
 | `download ... did not complete` | the dataset host timed out | re-run the data cell; completed bytes are resumed. A timeout is an access problem, not evidence of corrupt data |
-| `CONTRACT FAILURE: ... digest` | a corrupted or substituted file | delete the named file under `work/sdi_capstone/` and re-run; never skip the check |
+| `REFUSED  stage '...': ... digest` | a corrupted or substituted file | delete the named file under `work/sdi_capstone/` and re-run; never skip the check |
 | exit code -9 or "Killed" during a model load | host memory exhausted | note `lowest host memory available` from the stage log; use a high-RAM runtime; the notebook does not silently change precision or sizes |
 | CUDA out of memory | another process holds GPU memory | Runtime → Restart session, then Run all |
 | `generation shortfall` | fewer than 24 usable candidates in a class | a reportable result: the synthetic comparison is not presented. Do not increase the sample count to get past it |
 | `frozen input ... changed` | a file changed after freezing | re-run from Section 8; do not edit outputs by hand |
 | `reload parity ... FAIL` | the artifact or backbone file differs | re-run Section 11; if it persists, the export is not trustworthy |
-| BYOD `CONTRACT FAILURE` | the manifest or images break the contract | the message names the line, column, class, group or limit; fix the zip and use the BYOD check cell |
+| BYOD `REFUSED  stage 'data': ...` (Run all stops there, with no traceback) | the manifest or images break the contract | the message names the line, column, class, group or limit; fix the zip, check it with the BYOD check cell, then Run all again |
+| BYOD `REFUSED ... image mode 'I;16'` (or `I`, `F`) | a 16-bit, 32-bit or floating-point image | convert every image to 8-bit with one intensity range for the whole dataset (the message shows how), rebuild the zip and check it with the BYOD check cell |
+| `VERDICTS WITHHELD` in Section 9 | fewer than 15 independent held-out groups of a class | the numbers are descriptive only; add independent groups (new specimens or sessions) to that class rather than near-copies |
 | HF warning about `HF_TOKEN` | unauthenticated downloads | harmless: every model used here is ungated, and the notebook removes tokens from child processes |
 
 ### 13.5 Further exploration
@@ -1033,7 +1238,7 @@ This notebook's code and text were developed with generative AI assistance for c
 
 Abouelenin, A., Ashfaq, A., Atkinson, A., Awadalla, H., Bach, N., et al. (2025). *Phi-4-Mini technical report: Compact yet powerful multimodal language models via mixture-of-LoRAs*. arXiv. https://doi.org/10.48550/arXiv.2503.01743
 
-Black Forest Labs. (2024). *FLUX.1 [schnell]* [Model card]. Hugging Face. https://huggingface.co/black-forest-labs/FLUX.1-schnell
+Black Forest Labs. (2024). *FLUX.1 [schnell]* [Model card, revision 741f7c3c]. Hugging Face. https://huggingface.co/black-forest-labs/FLUX.1-schnell/blob/741f7c3ce8b383c54771c7003378a50191e9efe9/README.md
 
 Deng, J., Dong, W., Socher, R., Li, L.-J., Li, K., & Fei-Fei, L. (2009). ImageNet: A large-scale hierarchical image database. In *2009 IEEE Conference on Computer Vision and Pattern Recognition* (pp. 248–255). https://doi.org/10.1109/CVPR.2009.5206848
 
@@ -1047,7 +1252,7 @@ Sokolova, M., & Lapalme, G. (2009). A systematic analysis of performance measure
 
 Trabucco, B., Doherty, K., Gurinas, M., & Salakhutdinov, R. (2023). *Effective data augmentation with diffusion models*. arXiv. https://doi.org/10.48550/arXiv.2302.07944
 
-Wang, R., Hoppe, S., Monari, E., & Huber, M. F. (2023). *Defect Transfer GAN: Diverse defect synthesis for data augmentation*. arXiv. https://doi.org/10.48550/arXiv.2302.08366
+Wang, R., Hoppe, S., Monari, E., & Huber, M. F. (2022). Defect Transfer GAN: Diverse defect synthesis for data augmentation. In *British Machine Vision Conference (BMVC 2022)*. https://api.semanticscholar.org/CorpusID:256900681 (preprint: https://doi.org/10.48550/arXiv.2302.08366)
 """
 
 SCRIPT_NOTES = {
@@ -1105,7 +1310,7 @@ def build() -> dict:
     cells += script_cells("stage_evaluate.py") + script_cells("stage_export.py") + script_cells("stage_reload.py")
     cells += [code(S8_RUN), md(S8_NOTICE), md(S8_CHECK), md(S9_INTRO)]
     cells.append(code(S9_RUN))
-    cells += [md(S9_NOTICE), md(S9_CHECK), md(S10_INTRO), code(S10_RUN), md(S10_NOTICE), md(S11_INTRO)]
+    cells += [md(S9_NOTICE), md(S9_CHECK), md(S10_INTRO), code(S10_RUN), md(S10_INTERPRET), md(S10_NOTICE), md(S10_ANSWER), code(S10_ANSWER_RUN), md(S11_INTRO)]
     cells.append(code(S11_RUN))
     cells += [md(S11_NOTICE), md(S11_CHECK), md(S12_INTRO), code(S12_RUN, form=True), md(S13_INTRO), code(S13_EXERCISE), md(S13_REVIEW), code(S13_REVIEW_RUN), md(S13_BYOD), code(S13_BYOD_RUN), md(S13_TROUBLE), md(DISCLOSURE)]
     for n, cell in enumerate(cells):
@@ -1121,6 +1326,9 @@ def build() -> dict:
             "language_info": {"name": "python"},
             "dimer": {
                 "notebook_spec": "2.2",
+                "notebook_profile": "E2E",
+                "notebook_mode": "GUIDED",
+                "notebook_kind": "CAPSTONE",
                 "profile": "E2E",
                 "pedagogical_mode": "GUIDED",
                 "standalone": True,
@@ -1128,6 +1336,7 @@ def build() -> dict:
                 "capability": "controlled comparison of synthetic (Phi-4 described, FLUX generated) versus conventional augmentation for a frozen-feature defect classifier on the Bosch SDI dataset",
                 "generated_from": {"generator": GENERATOR, "repository": REPO, "sources": sources},
                 "revisions": REVISIONS,
+                "kept_deviations": KEPT_DEVIATIONS,
             },
         },
         "nbformat": 4,

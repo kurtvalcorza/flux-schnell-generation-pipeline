@@ -106,7 +106,6 @@ def main(cfg_path: str) -> None:
     stage_seconds = round(time.time() - t0, 1)
 
     import torch
-    from PIL import Image
     from transformers import AutoModelForCausalLM, AutoProcessor, BitsAndBytesConfig, GenerationConfig
 
     if not torch.cuda.is_available():
@@ -126,7 +125,7 @@ def main(cfg_path: str) -> None:
     records = []
     for r in rows:
         path = data_root / r["relpath"]
-        image = Image.open(path).convert("RGB")
+        image = core.open_verified_rgb(path, r)  # bytes checked against split_manifest.csv before decoding (CX7)
         inputs = processor(text=prompt, images=[image], return_tensors="pt").to("cuda")
         t = time.time()
         with torch.inference_mode():

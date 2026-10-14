@@ -47,14 +47,18 @@ def main(cfg_path: str) -> None:
             predictions[(arm, seed)] = logits.argmax(1)
             scores[(arm, seed)] = core.softmax(logits)
     for (arm, seed), pred in predictions.items():
-        per_run.setdefault(arm, {})[str(seed)] = core.metrics_from_confusion(core.confusion_matrix(y, pred, k), order)
+        run = core.metrics_from_confusion(core.confusion_matrix(y, pred, k), order)
+        run["average_precision"] = core.per_class_average_precision(y, scores[(arm, seed)], order)
+        run["macro_auprc"] = core.macro_auprc(y, scores[(arm, seed)], k)
+        per_run.setdefault(arm, {})[str(seed)] = run
     summary = {}
     for arm, runs in per_run.items():
-        summary[arm] = {m: {"mean": float(np.mean([r[m] for r in runs.values()])), "min": float(np.min([r[m] for r in runs.values()])), "max": float(np.max([r[m] for r in runs.values()])), "per_seed": {s: r[m] for s, r in runs.items()}} for m in ("macro_f1", "balanced_accuracy", "accuracy")}
-    contrasts = {}
-    if "C" in arms:
-        contrasts["C - B"] = core.paired_contrast(predictions, y, groups, arm="C", reference="B", seeds=seeds, k=k)
-    contrasts["B - A"] = core.paired_contrast(predictions, y, groups, arm="B", reference="A", seeds=seeds, k=k)
+        summary[arm] = {m: {"mean": float(np.mean([r[m] for r in runs.values()])), "min": float(np.min([r[m] for r in runs.values()])), "max": float(np.max([r[m] for r in runs.values()])), "per_seed": {s: r[m] for s, r in runs.items()}} for m in ("macro_f1", "balanced_accuracy", "accuracy", "macro_auprc")}
+    # Pre-declared design (BSA2-M1, option C): co-primary test macro-F1 AND balanced accuracy, secondary macro AUPRC;
+    # every contrast on the same paired group-bootstrap resamples.
+    pairs = ([("C", "B")] if "C" in arms else []) + [("B", "A")]
+    contrasts = {f"{a} - {b}": {m: core.paired_contrast(predictions, y, groups, arm=a, reference=b, seeds=seeds, k=k, metric=m, scores=scores) for m in core.CONTRAST_METRICS} for a, b in pairs}
+    support = core.heldout_support(core.group_counts(rows, order))
 
     # Held-out overlap audit, run only now that everything is frozen. A consequential match is reported, not removed.
     sig = np.load(work / "audit" / "signatures.npz")
@@ -72,18 +76,20 @@ def main(cfg_path: str) -> None:
     cross_pixels = sum(1 for s in pixel_split.values() if len(s) > 1)
     overlap = {"synthetic_vs_heldout": {"max_correlation": float(best.max()) if len(best) else None, "flagged": flagged}, "exact_pixel_duplicates_across_partitions": cross_pixels}
     valid = not flagged and cross_pixels == 0
+    verdicts = {name: core.co_primary_verdict(by_metric, valid=valid, support=support) for name, by_metric in contrasts.items()}
     metrics = {
         "evidence": f"tutorial evidence from one grouped split ({core.read_json(out / 'data_manifest.json')['experiment_scope']}) and one generated pool; not factory-level or production performance",
         "test_counts": {c: int((y == i).sum()) for i, c in enumerate(order)},
         "arms": {a: core.ARM_NAMES[a] for a in per_run},
-        "per_run": per_run, "summary": summary, "contrasts": contrasts,
-        "interval_note": "approximate 95% percentile interval from 1,000 class-stratified group bootstrap resamples of the test partition, paired across arms; conditional on this split and generated pool; it does not include training or generation variability",
+        "per_run": per_run, "summary": summary, "contrasts": contrasts, "design": core.PRIMARY_DESIGN, "verdicts": verdicts, "heldout_support": support,
+        "interval_note": "approximate 95% percentile interval from 1,000 class-stratified group bootstrap resamples of the test partition (groups stratified by the classes they hold), paired across arms and metrics; conditional on this split and generated pool; it does not include training or generation variability",
         "decision_rule": "argmax of the linear head's logits (no threshold tuning); scores are softmax of uncalibrated logits, not calibrated probabilities",
         "overlap_audit": overlap, "comparison_valid": valid,
         "validity_note": "" if valid else "a held-out overlap was found after freezing; the comparison is reported as invalid rather than repaired",
         "generation_complete": record["generation_status"]["complete"], "smoke_run": record["smoke_run"],
         "frozen_record_sha256": record["record_sha256"], "seconds": round(time.time() - started, 1),
     }
+    metrics["claims"] = core.claim_table(metrics)
     core.write_json(out / "metrics.json", metrics)
     with open(out / "predictions.csv", "w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, lineterminator="\n")
@@ -134,7 +140,7 @@ def main(cfg_path: str) -> None:
         items += [(core.load_verified_gray(data_root / test[n]["relpath"], test[n]), f"{arm}: true {order[y[n]]}\npred {order[predictions[(arm, canon)][n]]}") for n in wrong]
     if items:
         core.contact_sheet(items, title=f"Misclassified TEST images, seed {canon} (arm: true -> predicted)").save(figures / "error_gallery.png")
-    print(core.canonical_json({"macro_f1_mean": {a: round(s["macro_f1"]["mean"], 4) for a, s in summary.items()}, "contrasts": {c: [round(v["mean_difference"], 4), [round(z, 4) for z in v["interval_95"]]] for c, v in contrasts.items()}, "comparison_valid": valid}))
+    print(core.canonical_json({"macro_f1_mean": {a: round(s["macro_f1"]["mean"], 4) for a, s in summary.items()}, "contrasts": {c: {m: [round(v["mean_difference"], 4), [round(z, 4) for z in v["interval_95"]]] for m, v in by_metric.items()} for c, by_metric in contrasts.items()}, "verdicts": {c: v["claim"] for c, v in verdicts.items()}, "comparison_valid": valid, "heldout_groups_sufficient": support["sufficient"]}))
 
 
 if __name__ == "__main__":

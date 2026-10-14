@@ -88,8 +88,11 @@ def check_byod(cfg: dict, work: Path, zip_path: str) -> None:
     for r in records:
         counts.setdefault(r["split"], {}).setdefault(r["label"], 0)
         counts[r["split"]][r["label"]] += 1
+    support = core.heldout_support(core.group_counts(records, split["class_order"]))
     shutil.rmtree(scratch, ignore_errors=True)
-    print(core.canonical_json({"byod_check": "PASS", "images": len(records), "undecodable": bad, "groups": grouping["groups"], "class_order": split["class_order"], "split_counts": counts}))
+    print(core.canonical_json({"byod_check": "PASS", "images": len(records), "undecodable": bad, "groups": grouping["groups"], "mixed_class_groups": len(split["mixed_class_groups"]), "class_order": split["class_order"], "split_counts": counts, "heldout_group_support": support}))
+    if not support["sufficient"]:
+        print(f"WARNING: fewer than {support['minimum_groups_per_class']} independent held-out groups for {support['below_minimum']}: the experiment can run, but its test verdicts will be withheld.")
 
 
 def main() -> None:
@@ -179,6 +182,8 @@ def main() -> None:
             "near_duplicate_pairs": len(pairs),
             "example_pairs": [[ids[i], ids[j], s] for i, j, s in pairs[:25]],
             "label_conflict_groups": len(split["label_conflict_groups"]),
+            "label_conflict_rule": "exact decoded-pixel duplicates carrying different labels; every copy is excluded",
+            "mixed_class_groups": len(split["mixed_class_groups"]),
             "label_conflict_images": conflict_members,
             "pairs_just_below_threshold": {"range": [core.NEAR_DUPLICATE_THRESHOLD - 0.005, core.NEAR_DUPLICATE_THRESHOLD], "count": below},
             "similar_pairs_crossing_partitions": {"correlation_at_least": core.AUDIT_SIMILARITY, "by_label_pair": crossing},
@@ -189,6 +194,8 @@ def main() -> None:
             "design": "deterministic, approximately class-stratified 60/20/20 group assignment (custom; not the source's split)",
             "fractions": dict(core.SPLIT_FRACTIONS),
             "counts": by_split,
+            "group_counts": core.group_counts(experiment, split["class_order"]),
+            "heldout_support": core.heldout_support(core.group_counts(experiment, split["class_order"])),
             "official_vs_custom": official_vs_custom,
             "manifest_sha256": split_sha,
             "reference_sha256": REFERENCE_SPLIT_SHA256 if cfg["data_source"] == "bosch" else None,

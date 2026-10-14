@@ -169,7 +169,7 @@ def main() -> None:
     ranked = sorted(arms, key=lambda a: (-results[a][canon]["val"]["macro_f1"], core.ARMS.index(a)))
     selection = {"seed": int(canon), "arm": ranked[0], "val_macro_f1": results[ranked[0]][canon]["val"]["macro_f1"], "epoch": results[ranked[0]][canon]["selected_epoch"], "rule": "canonical seed; highest validation macro-F1; ties favour A, then B, then C"}
     record = {
-        "question": "Under a fixed real-data budget, classifier, class-sampling policy and training budget, does substituting synthetic defect examples into training improve real-test macro-F1 compared with conventional augmentation?",
+        "question": "Under a fixed real-data budget, classifier, class-sampling policy and training budget, does substituting synthetic defect examples into training improve both real-test macro-F1 and real-test balanced accuracy (co-primary) compared with conventional augmentation?",
         "primary_contrast": "C - B", "contextual_contrast": "B - A", "primary_metric": "macro-F1 on the test partition",
         "class_order": order, "budget": data["budget"], "split_version": data["split"]["version"], "split_sha256": data["split"]["manifest_sha256"],
         "seeds": seeds, "smoke_run": len(seeds) < 3, "head": core.HEAD, "synthetic_probability": probability,
