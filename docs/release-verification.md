@@ -194,6 +194,8 @@ runtime, not general estimates.
 
 ## Current status
 
+**Tier C wording revision (2026-10-25, branch `fix/flux-schnell-generation-tier-c-2026-10-25`, code commit `08416aa`).** Markdown, header and metadata only: the Section 8 worked answer and the Interpretation re-derived from the 2026-10-04 run of `7b4782c` (label accuracy 0.667 → 0.667, mean reference similarity 71.95 → 71.89), run-labelled numbers (REL13), use notice, `notebook_kind`, IEEE references and the DIMER Notebook Specification 2.5 declaration. The regenerated notebook blob `6ea19d2ef9feb8cf9e509c7f466b6d9d4417e721` is **Candidate** and its hosted runs are **pending** (REL14); the 2026-10-04 run is evidence for blob `d26eb848` only.
+
 **Candidate.** The 2026-10-04 review fixes produced the notebook blob `d26eb848` (committed at `7b4782c`), which
 completed one pass under the Colab CLI 0.7.4 on a fresh Colab Tesla T4 on 2026-10-04 (14/14 code cells, 0 errors, no restart, 3129.5 s; default path only, not a browser `Run all`); see Recorded executions above. The
 earlier `E2E` blob `52226812` (committed at `d4fdf72`) completed on a clean Kaggle Tesla T4 runtime on 2026-09-20 only
