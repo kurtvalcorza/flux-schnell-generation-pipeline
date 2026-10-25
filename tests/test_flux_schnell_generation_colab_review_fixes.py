@@ -524,7 +524,7 @@ def test_expectations_match_the_record_and_the_conclusion_is_conditional(nb: dic
     assert "Read your own Section 8 before concluding" in md
     assert "**Pretraining overlap.**" in md and "**Run-to-run variability.**" in md
     # Tier C T27-1, then the 2026-10-25 ruling: the worked answer quotes both Colab runs, directions that flipped are named.
-    assert "Chipping Sparrow (70.24 → 67.31 and 67.29)" in md and "label accuracy stayed at 0.667" in md
+    assert "Chipping Sparrow (70.24 → 67.31, 67.29 and 66.18)" in md and "label accuracy stayed at 0.667 in the runs of" in md
     assert "rose from 0.667 to 0.833" not in md
 
 

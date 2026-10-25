@@ -24,7 +24,7 @@ def test_single_run_directions_and_values_are_gone():
 
 def test_flipped_directions_and_ranges_are_stated():
     md = _markdown()
-    assert "moved in opposite directions in the two runs" in md
-    assert "71.95 → 71.89 in the first and 71.95 → 72.55 in the second" in md
-    assert "0.834 → 0.591–0.595 → 0.532–0.534 → 0.523–0.524" in md
-    assert "3,129.5 s and 2,717.6 s" in md and "12.22 to 12.23 GB" in md
+    assert "moved in different directions between runs" in md
+    assert "71.95 → 71.89, → 72.55 and → 72.99 in that order" in md
+    assert "0.834 → 0.588–0.595 → 0.531–0.534 → 0.523–0.524" in md
+    assert "3,129.5 s, 2,717.6 s and 2,939.5 s" in md and "12.22 to 12.23 GB" in md
