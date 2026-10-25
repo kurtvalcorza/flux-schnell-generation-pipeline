@@ -11,8 +11,7 @@ NB = Path(__file__).resolve().parents[1] / "tutorials" / "flux_schnell_generatio
 
 def _markdown():
     nb = json.loads(NB.read_text(encoding="utf-8"))
-    return "
-".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "markdown")
+    return "\n".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "markdown")
 
 
 def test_expectations_and_run_status_sentences_are_gone():
