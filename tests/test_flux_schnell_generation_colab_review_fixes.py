@@ -523,7 +523,9 @@ def test_expectations_match_the_record_and_the_conclusion_is_conditional(nb: dic
     assert "below the real photographs' 1.0" not in md and "about an hour" not in md
     assert "Read your own Section 8 before concluding" in md
     assert "**Pretraining overlap.**" in md and "**Run-to-run variability.**" in md
-    assert "Chipping Sparrow 70.24 → 68.58" in md
+    # Tier C T27-1: the worked answer quotes the current blob's hosted run (7b4782c), not the earlier Kaggle run.
+    assert "Chipping Sparrow 70.24 → 67.31" in md and "label accuracy stayed at 0.667" in md
+    assert "rose from 0.667 to 0.833" not in md
 
 
 def test_generated_images_are_displayed_inline(nb: dict) -> None:
