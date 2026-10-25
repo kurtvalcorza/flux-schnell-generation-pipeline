@@ -64,6 +64,8 @@ BADGES = [
 # inside its own reference (88.66); the leave-one-out value 57.7 is derived exactly from that run's per-image numbers.
 RECORD = "the recorded Kaggle T4 run of the previous notebook version (blob `52226812`, same model stages, 2026-09-20)"
 HOSTED = 'the 2026-10-04 Colab T4 run of revision `7b4782c` (notebook blob `d26eb848`, recorded in `docs/release-verification.md`)'
+COLAB = 'both recorded Colab T4 runs (blob `d26eb848`, 2026-10-04, and blob `6ea19d2e`, 2026-10-25, recorded in `docs/release-verification.md`)'
+ALL = 'every recorded hosted run (' + RECORD[4:] + ', and the Colab T4 runs of blobs `d26eb848`, 2026-10-04, and `6ea19d2e`, 2026-10-25)'
 
 _DATA_CODE = _py(
     """import json
@@ -429,8 +431,8 @@ TEMPLATE = {
         "the adapted model on identical inputs, renders a new prompt, exports the adapter as safetensors with a manifest, releases "
         "the adapted transformer, reloads the artifact into a fresh 4-bit pipeline to verify parity, and releases that pipeline "
         "too. The default path needs no repository clone, no DIMER worker or service, no credential, no upload dialog and no "
-        "configuration edit (NOTEBOOK_SPEC 2.5 §5). Measured times: " + HOSTED + " took 3,129.5 s of suite wall time, "
-        "including VM allocation, the isolated install and the 34 GB of downloads, with 938 s of fine-tuning; hosted runs of "
+        "configuration edit (NOTEBOOK_SPEC 2.5 §5). Measured times: the suite takes about 45 to 52 minutes of wall time on a Colab T4 (3,129.5 s and 2,717.6 s in " + COLAB + "), "
+        "including VM allocation, the isolated install and the 34 GB of downloads, with 938 s and 990 s of fine-tuning; hosted runs of "
         "this revision are pending. The previous notebook version (blob `52226812`), whose model stages "
         "are the same: a Kaggle Tesla T4 run took 2,912 s of cell time (2026-09-20) — 536 s staging the 34 GB of snapshots and "
         "about 36 minutes for Sections 4–9, 17 of them fine-tuning — with a pinned in-kernel install this version no longer does. "
@@ -620,7 +622,7 @@ TEMPLATE = {
                 "`released_before_encoding` line lists what an earlier pass had left on the GPU.\n\n"
                 "<details><summary>Check your reasoning</summary>In "
                 + RECORD
-                + " the GPU held 12.15 GB with both encoders loaded and 0.35 GB after the release — the float32 VAE and "
+                + " the GPU held 12.15 GB with both encoders loaded and 0.35 GB after the release (12.14 GB and 0.34 GB in " + COLAB + "; the line printed above gives yours) — the float32 VAE and "
                 "allocator overhead; the seven prompts' embeddings are on the CPU. That 12 GB is why the 6.6 GB transformer cannot "
                 "load until the encoders are gone, and why a re-run must first release whatever 4-bit transformer is still "
                 "resident.</details>\n\n"
@@ -660,10 +662,10 @@ TEMPLATE = {
                 "**What to notice (Section 6):** the frozen generations next to the real-photo reference line, metric by metric, "
                 "and the per-species rows: which birds did CLIP name correctly?\n\n"
                 "<details><summary>Check your reasoning</summary>Above, on both. In "
-                + RECORD
+                + ALL
                 + " the frozen generations scored prompt similarity 31.08 against the real photographs' 30.25 and reference "
-                "similarity 71.95 against a leave-one-out real-photo value of 57.7, while label accuracy was 0.667 against the real "
-                "photos' 0.917. That run printed 88.66 for the real photos' reference similarity because each photo was then "
+                "similarity 71.95 against a leave-one-out real-photo value of 57.7 (printed as 57.722 by the Colab runs), while label accuracy was 0.667 against the real "
+                "photos' 0.917. The Kaggle run printed 88.66 for the real photos' reference similarity because each photo was then "
                 "included in its own reference; excluding it gives 57.7. So the reference line is not a ceiling on two of the three "
                 "readings: the generator is conditioned on the prompt and is compared with a two-photo mean, while each photo is "
                 "compared with one other photo. Label accuracy is the reading on which the frozen model sat clearly below the real "
@@ -678,9 +680,9 @@ TEMPLATE = {
                 "with the lowest validation flow-matching loss is kept. `reset_to_pretrained()` runs first, so re-running this cell "
                 "with a different `EPOCHS` or `LEARNING_RATE` trains again from the pretrained base (`adapt` refuses to continue from "
                 "an already trained adapter).\n\n"
-                "Watch the validation loss from epoch 0; three epochs over 36 images (108 steps) took 17 minutes on a T4 in "
+                "Watch the validation loss from epoch 0; three epochs over 36 images (108 steps) took about 16 to 17 minutes on a T4 (938 s and 990 s in " + COLAB + ", 1,025 s in "
                 + RECORD
-                + ", most of it the per-epoch validation pass. The training loss is a noisy per-step average over random noise "
+                + "), most of it the per-epoch validation pass. The training loss is a noisy per-step average over random noise "
                 "levels and is not the quality signal — the paired held-out numbers in Section 8 are.\n\n"
                 "**Predict before running:** will the validation loss fall at every epoch? Will the training loss?"
             ),
@@ -690,13 +692,13 @@ TEMPLATE = {
             "md": (
                 "## 8. Held-out evaluation: the paired comparison\n\n"
                 "**What to notice (Section 7):** the validation loss per epoch, the kept epoch and the peak GPU memory of training.\n\n"
-                "<details><summary>Check your reasoning</summary>In "
-                + RECORD
-                + " the validation loss fell at every epoch (0.834 → 0.595 → 0.534 → 0.524) and epoch 3 was kept, while the "
-                "training loss went 0.624 → 0.669 → 0.569: up, then down. Each training step draws its own random noise level, and "
+                "<details><summary>Check your reasoning</summary>Read the epoch lines printed above. In "
+                + ALL
+                + " the validation loss fell at every epoch (0.834 → 0.591–0.595 → 0.532–0.534 → 0.523–0.524) and epoch 3 was kept, while the "
+                "training loss went 0.622–0.624 → 0.664–0.669 → 0.566–0.569: up, then down, in every run. Each training step draws its own random noise level, and "
                 "the loss depends strongly on it (Section 6 prints the per-σ loss), so a per-epoch training average is noisy; the "
                 "validation loss uses the same fixed noise every time and is the signal used to choose the epoch. Peak training "
-                "memory was 12.23 GB.</details>\n\n"
+                "memory was 12.22 to 12.23 GB.</details>\n\n"
                 "The test photographs were never used for training or epoch selection. The adapted model is scored exactly as "
                 "the frozen model was in Section 6 — the same seed, so the same latents, noise and noise levels, and the same "
                 "prompt/seed pairs for generation — and the table puts the frozen, the adapted and the real-photo reference numbers "
@@ -717,10 +719,10 @@ TEMPLATE = {
                 "**What to notice (Section 8):** the per-species rows, not only the means — and whether the bottom row of the "
                 "side-by-side grid looks more like the photographs of each species than the top row.\n\n"
                 "<details><summary>Check your reasoning</summary>Not every one, and on this sample the CLIP readings barely moved. "
-                "In " + HOSTED + " the test flow-matching MSE fell from 0.795 to 0.506 and was lower at every noise level, "
-                "but label accuracy stayed at 0.667 and the mean reference similarity went from 71.95 to 71.89, essentially "
-                "unchanged. Three of the six species moved down (Chipping Sparrow 70.24 → 67.31, American Goldfinch 79.89 → "
-                "79.08, Dark-eyed Junco 69.16 → 67.14) and three moved up (Song Sparrow, White-throated Sparrow, House Finch). "
+                "Read the per-species rows printed above. In " + COLAB + " the test flow-matching MSE fell from 0.795 to 0.506 and was lower at every noise level, "
+                "and label accuracy stayed at 0.667, but the mean reference similarity moved differently: 71.95 → 71.89 in the first and 71.95 → 72.55 in the second. "
+                "The per-species directions were not stable either: in both Colab runs Chipping Sparrow (70.24 → 67.31 and 67.29) and Dark-eyed Junco (69.16 → 67.14 and 67.23) fell "
+                "and White-throated Sparrow and House Finch rose, while Song Sparrow (80.18 → 81.60 and 78.67) and American Goldfinch (79.89 → 79.08 and 81.68) moved in opposite directions in the two runs. "
                 "In " + RECORD + ", label accuracy had risen to 0.833 and the mean reference similarity to 75.01; the same "
                 "code and seeds on a different runtime did not reproduce that, which is itself the lesson about one image per "
                 "species. With one image per species "
@@ -757,7 +759,7 @@ TEMPLATE = {
                 + " both differences were 0.0: the same bytes quantised the same way, the same embeddings and the same kernels "
                 "give the same arithmetic. On a different GPU, driver or library build the numbers would differ slightly, which is "
                 "why parity is checked in one session. That run held 7.48 GB with the reloaded pipeline resident and did not "
-                "release it; this version releases it, and the printed memory should fall back to about 1 GB (the VAE and the CLIP scorer).</details>\n\n"
+                "release it (the Colab runs held 7.47 GB before their release); this version releases it, and the printed memory should fall back to about 1 GB (the VAE and the CLIP scorer).</details>\n\n"
                 "**Predict → Change one thing → Run → Observe → Explain.**\n\n"
                 "1. **Predict:** schnell is distilled to render in one to four steps. With one or two steps instead of four, will "
                 "the CLIP prompt similarity and the label accuracy of the pretrained model's images go up, down or stay put? Write "
@@ -787,13 +789,14 @@ TEMPLATE = {
         "**What to notice (Section 10):** if you ran the activity, whether the 4-step row matches Section 6 and how the "
         "readings and the seconds changed with fewer steps.\n\n"
         "Read your own Section 8 before concluding; the claim below is what the run is designed to test, not a result stated in "
-        "advance. In " + HOSTED + " the test flow-matching loss fell (0.795 → 0.506) but the CLIP readings of the generations did "
-        "not move (label accuracy 0.667 → 0.667, mean reference similarity 71.95 → 71.89). If the test flow-matching loss falls "
+        "advance. In " + COLAB + " the test flow-matching loss fell (0.795 → 0.506) but the CLIP readings of the generations barely "
+        "moved (label accuracy 0.667 → 0.667, mean reference similarity 71.95 → 71.89 and → 72.55). If the test flow-matching loss falls "
         "and the generations move towards the held-out photographs, a LoRA of nine "
-        "million parameters trained for about 17 minutes on 36 photographs over a 4-bit 12 B base has taught the "
+        "million parameters trained for about 16 to 17 minutes on 36 photographs over a 4-bit 12 B base has taught the "
         "rectified-flow transformer something about a narrow visual domain from a handful of captioned images on a 16 GB GPU, "
         "measured on identical inputs before and after, and the artifact that carries the change is 37 MB. Check the "
-        "per-species rows: in that run three of the six species' reference similarities fell and three rose, so the means hide "
+        "per-species rows: in each recorded run some species' reference similarities fell and others rose (three and three in each Colab run), "
+        "and Song Sparrow and American Goldfinch changed direction between the two Colab runs, so the means hide "
         "movement in both directions; the earlier Kaggle run of blob `52226812` showed two falling while the mean rose.\n\n"
         "The numbers are sample-sanity evidence. A flow-matching loss is the training objective, not a quality score; CLIP similarity "
         "and CLIP's nearest-caption vote are a frozen model's opinion, not a human judgement, and CLIP itself has biases about what a "
