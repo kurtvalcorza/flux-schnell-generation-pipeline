@@ -62,7 +62,10 @@ BADGES = [
 # Worked answers quote the recorded Kaggle Tesla T4 run of the previous notebook version (blob 52226812, 2026-09-20):
 # its model stages are this version's, except that it printed the real-photo reference similarity with each photo
 # inside its own reference (88.66); the leave-one-out value 57.7 is derived exactly from that run's per-image numbers.
-RECORD = "the recorded Kaggle T4 run of the previous notebook version (same model stages, 2026-09-20)"
+RECORD = "the recorded Kaggle T4 run of the previous notebook version (blob `52226812`, same model stages, 2026-09-20)"
+HOSTED = 'the 2026-10-04 Colab T4 run of revision `7b4782c` (notebook blob `d26eb848`, recorded in `docs/release-verification.md`)'
+COLAB = 'the three recorded Colab T4 runs (blob `d26eb848`, 2026-10-04, and blobs `6ea19d2e` and `54c8d314`, 2026-10-25, recorded in `docs/release-verification.md`)'
+ALL = 'every recorded hosted run (' + RECORD[4:] + ', and the Colab T4 runs of blobs `d26eb848`, 2026-10-04, `6ea19d2e` and `54c8d314`, 2026-10-25)'
 
 _DATA_CODE = _py(
     """import json
@@ -428,11 +431,12 @@ TEMPLATE = {
         "the adapted model on identical inputs, renders a new prompt, exports the adapter as safetensors with a manifest, releases "
         "the adapted transformer, reloads the artifact into a fresh 4-bit pipeline to verify parity, and releases that pipeline "
         "too. The default path needs no repository clone, no DIMER worker or service, no credential, no upload dialog and no "
-        "configuration edit (NOTEBOOK_SPEC 2.2 §5). Measured times come from the previous notebook version, whose model stages "
+        "configuration edit (NOTEBOOK_SPEC 2.5 §5). Measured times: on a Colab T4 the recorded runs took between 45.3 and 52.2 minutes of wall time (3,129.5 s, 2,717.6 s and 2,939.5 s in " + COLAB + "), "
+        "including VM allocation, the isolated install and the 34 GB of downloads, with 938 s, 990 s and 1,088.6 s of fine-tuning; "
+        "yours may differ. The previous notebook version (blob `52226812`), whose model stages "
         "are the same: a Kaggle Tesla T4 run took 2,912 s of cell time (2026-09-20) — 536 s staging the 34 GB of snapshots and "
         "about 36 minutes for Sections 4–9, 17 of them fine-tuning — with a pinned in-kernel install this version no longer does. "
-        "Building the isolated environment (PyTorch with its CUDA libraries) comes on top and usually takes a few minutes (an "
-        "estimate; no run of this version is recorded yet)."
+        "Building the isolated environment (PyTorch with its CUDA libraries) comes on top of that earlier run's cell time."
     ),
     "byod": (
         "After the tutorial workflow completes, set `USE_BYOD = True` in Section 4, select that cell and choose **Runtime → Run "
@@ -551,7 +555,7 @@ TEMPLATE = {
     ),
     "prerequisites": [
         "- **Learner:** basic Python and PyTorch; what a train/validation/test split protects against. The notebook explains rectified flow, velocity, noise levels, the flow-matching loss, latents and the VAE, NF4 quantisation, LoRA and QLoRA, CLIP scores, the leave-one-out reference and reload parity where they are first used; the Glossary repeats them.",
-        "- **Runtime:** a fresh **Linux x86_64 GPU** runtime — Google Colab T4 or better, Kaggle, or a Linux Jupyter server with a CUDA GPU of at least 15 GB. Section 1 builds its own Python 3.12.12 environment from a hash-locked list of manylinux wheels, so the kernel's own Python version does not matter, and a Windows or macOS kernel is not supported (Section 1 stops with that message). The CLIP-L and T5-XXL encoders run in float16 (9.7 GB) while they encode prompts and are then released; the transformer is loaded 4-bit (NF4, about 6.6 GB) with float16 compute and the LoRA parameters in float32; the FLUX VAE stays in float32 (0.34 GB). CPU-only runtimes are not supported: bitsandbytes 4-bit needs CUDA and the 12 B transformer would need 48 GB of RAM in float32. **Disk:** about 36 GB for the two snapshots plus several GB for the isolated environment (PyTorch with its CUDA libraries). **Host RAM:** every model load streams its weights to the GPU one tensor at a time (`device_map`), so a standard Colab VM (12.7 GiB) is meant to be enough; this repository's capstone notebook ran the same loading pattern on such a VM, but this notebook has not yet been run on Colab.",
+        "- **Runtime:** a fresh **Linux x86_64 GPU** runtime — Google Colab T4 or better, Kaggle, or a Linux Jupyter server with a CUDA GPU of at least 15 GB. Section 1 builds its own Python 3.12.12 environment from a hash-locked list of manylinux wheels, so the kernel's own Python version does not matter, and a Windows or macOS kernel is not supported (Section 1 stops with that message). The CLIP-L and T5-XXL encoders run in float16 (9.7 GB) while they encode prompts and are then released; the transformer is loaded 4-bit (NF4, about 6.6 GB) with float16 compute and the LoRA parameters in float32; the FLUX VAE stays in float32 (0.34 GB). CPU-only runtimes are not supported: bitsandbytes 4-bit needs CUDA and the 12 B transformer would need 48 GB of RAM in float32. **Disk:** about 36 GB for the two snapshots plus several GB for the isolated environment (PyTorch with its CUDA libraries). **Host RAM:** every model load streams its weights to the GPU one tensor at a time (`device_map`), so a standard Colab VM (12.7 GiB) is meant to be enough.",
         "- **Knowledge:** what a latent diffusion or flow-matching model does at inference (noise → latent → image), why a distilled few-step model uses no classifier-free guidance, what 4-bit weight quantisation changes, what a LoRA adapter changes and what it does not, and why a training loss is not a quality score. Each is explained again where it is used.",
         "- **Weights:** the transformer, both text encoders, the VAE and the CLIP scorer are all safetensors; nothing is unpickled and no Hub-hosted code is executed — the model classes come from `diffusers`, `transformers`, `peft` and `bitsandbytes` on PyPI. FLUX.1 [schnell] is released under the Apache-2.0 licence; the scorer is MIT. The upstream Hub repository is gated by a click-through, so the bytes are fetched from an ungated, unmodified mirror and verified against the manifest committed in this repository (Section 3).",
         "- **Data contract:** a record is `{id, image, caption}` — an RGB image with shorter side 256..4096 px (resized so the shorter side is 512 px and centre-cropped to 512 × 512; the crop is reported) and a caption of 1..1000 characters (truncated to 256 T5 tokens and 77 CLIP tokens; T5 truncations are reported). Validation is structural: nothing checks that a caption describes its image or that the model can render it.",
@@ -617,7 +621,7 @@ TEMPLATE = {
                 "`released_before_encoding` line lists what an earlier pass had left on the GPU.\n\n"
                 "<details><summary>Check your reasoning</summary>In "
                 + RECORD
-                + " the GPU held 12.15 GB with both encoders loaded and 0.35 GB after the release — the float32 VAE and "
+                + " the GPU held 12.15 GB with both encoders loaded and 0.35 GB after the release (12.14 GB and 0.34 GB in " + COLAB + "; the line printed above gives yours) — the float32 VAE and "
                 "allocator overhead; the seven prompts' embeddings are on the CPU. That 12 GB is why the 6.6 GB transformer cannot "
                 "load until the encoders are gone, and why a re-run must first release whatever 4-bit transformer is still "
                 "resident.</details>\n\n"
@@ -643,7 +647,7 @@ TEMPLATE = {
                 "photograph with its own background and pose, and each generation is compared with the mean of the two test photos "
                 "while each real photo is compared with one. Only label accuracy reads naturally as a target, because the captions "
                 "describe exactly these photographs.\n\n"
-                "Look for: the load taking a few minutes, a flow-matching MSE around 0.5..1.5, label accuracy at or below the real "
+                "Look for: the flow-matching MSE, label accuracy at or below the real "
                 "photographs', and the first grid of generated birds displayed below the numbers (also written to "
                 "`outputs/{stem}_frozen_grid.jpg`).\n\n"
                 "**Predict before running:** on CLIP prompt similarity, will the frozen model's generated birds score above or "
@@ -657,10 +661,10 @@ TEMPLATE = {
                 "**What to notice (Section 6):** the frozen generations next to the real-photo reference line, metric by metric, "
                 "and the per-species rows: which birds did CLIP name correctly?\n\n"
                 "<details><summary>Check your reasoning</summary>Above, on both. In "
-                + RECORD
+                + ALL
                 + " the frozen generations scored prompt similarity 31.08 against the real photographs' 30.25 and reference "
-                "similarity 71.95 against a leave-one-out real-photo value of 57.7, while label accuracy was 0.667 against the real "
-                "photos' 0.917. That run printed 88.66 for the real photos' reference similarity because each photo was then "
+                "similarity 71.95 against a leave-one-out real-photo value of 57.7 (printed as 57.722 by the Colab runs), while label accuracy was 0.667 against the real "
+                "photos' 0.917. The Kaggle run printed 88.66 for the real photos' reference similarity because each photo was then "
                 "included in its own reference; excluding it gives 57.7. So the reference line is not a ceiling on two of the three "
                 "readings: the generator is conditioned on the prompt and is compared with a two-photo mean, while each photo is "
                 "compared with one other photo. Label accuracy is the reading on which the frozen model sat clearly below the real "
@@ -675,9 +679,9 @@ TEMPLATE = {
                 "with the lowest validation flow-matching loss is kept. `reset_to_pretrained()` runs first, so re-running this cell "
                 "with a different `EPOCHS` or `LEARNING_RATE` trains again from the pretrained base (`adapt` refuses to continue from "
                 "an already trained adapter).\n\n"
-                "Watch the validation loss from epoch 0; three epochs over 36 images (108 steps) took 17 minutes on a T4 in "
+                "Watch the validation loss from epoch 0; three epochs over 36 images (108 steps) took between 15.6 and 18.1 minutes in the recorded T4 runs (938 s, 990 s and 1,088.6 s in " + COLAB + ", 1,025 s in "
                 + RECORD
-                + ", most of it the per-epoch validation pass. The training loss is a noisy per-step average over random noise "
+                + "; yours may differ), most of it the per-epoch validation pass. The training loss is a noisy per-step average over random noise "
                 "levels and is not the quality signal — the paired held-out numbers in Section 8 are.\n\n"
                 "**Predict before running:** will the validation loss fall at every epoch? Will the training loss?"
             ),
@@ -687,13 +691,13 @@ TEMPLATE = {
             "md": (
                 "## 8. Held-out evaluation: the paired comparison\n\n"
                 "**What to notice (Section 7):** the validation loss per epoch, the kept epoch and the peak GPU memory of training.\n\n"
-                "<details><summary>Check your reasoning</summary>In "
-                + RECORD
-                + " the validation loss fell at every epoch (0.834 → 0.595 → 0.534 → 0.524) and epoch 3 was kept, while the "
-                "training loss went 0.624 → 0.669 → 0.569: up, then down. Each training step draws its own random noise level, and "
+                "<details><summary>Check your reasoning</summary>Read the epoch lines printed above. In "
+                + ALL
+                + " the validation loss fell at every epoch (0.834 → 0.588–0.595 → 0.531–0.534 → 0.523–0.524) and epoch 3 was kept, while the "
+                "training loss went 0.620–0.624 → 0.663–0.669 → 0.566–0.569: up, then down, in each of those runs; this can vary between runs. Each training step draws its own random noise level, and "
                 "the loss depends strongly on it (Section 6 prints the per-σ loss), so a per-epoch training average is noisy; the "
                 "validation loss uses the same fixed noise every time and is the signal used to choose the epoch. Peak training "
-                "memory was 12.23 GB.</details>\n\n"
+                "memory in those runs was 12.22 to 12.23 GB.</details>\n\n"
                 "The test photographs were never used for training or epoch selection. The adapted model is scored exactly as "
                 "the frozen model was in Section 6 — the same seed, so the same latents, noise and noise levels, and the same "
                 "prompt/seed pairs for generation — and the table puts the frozen, the adapted and the real-photo reference numbers "
@@ -713,11 +717,14 @@ TEMPLATE = {
                 "## 9. A new prompt, artifact export and fresh reload\n\n"
                 "**What to notice (Section 8):** the per-species rows, not only the means — and whether the bottom row of the "
                 "side-by-side grid looks more like the photographs of each species than the top row.\n\n"
-                "<details><summary>Check your reasoning</summary>Not every one. In "
-                + RECORD
-                + " the test flow-matching MSE fell from 0.795 to 0.507 and was lower at every noise level, label accuracy "
-                "rose from 0.667 to 0.833 and the mean reference similarity from 71.95 to 75.01 — but two of the six species "
-                "moved the other way (Chipping Sparrow 70.24 → 68.58, Dark-eyed Junco 69.16 → 68.69). With one image per species "
+                "<details><summary>Check your reasoning</summary>In the recorded runs, not every one, and the CLIP readings moved by different amounts from run to run. "
+                "Read the per-species rows printed above. In " + COLAB + " the test flow-matching MSE fell from 0.795 to 0.506 and was lower at every noise level; "
+                "label accuracy stayed at 0.667 in the runs of `d26eb848` and `6ea19d2e` and rose to 0.833 in the run of `54c8d314`, and the mean reference similarity went 71.95 → 71.89, → 72.55 and → 72.99 in that order. "
+                "The per-species directions were not stable either: in all three Colab runs Chipping Sparrow (70.24 → 67.31, 67.29 and 66.18) and Dark-eyed Junco (69.16 → 67.14, 67.23 and 66.72) fell "
+                "and White-throated Sparrow and House Finch rose, while Song Sparrow (80.18 → 81.60, 78.67 and 83.53) and American Goldfinch (79.89 → 79.08, 81.68 and 81.55) moved in different directions between runs. "
+                "In " + RECORD + ", label accuracy had risen to 0.833 and the mean reference similarity to 75.01; of the three Colab runs with the same "
+                "code and seeds, only the run of `54c8d314` printed 0.833 again, which is itself the lesson about one image per "
+                "species. Your own rows may differ from all of these. With one image per species "
                 "and one seed, a single image can move a species' number either way; the paired loss on 12 photographs at five "
                 "noise levels is the steadier evidence.</details>\n\n"
                 "The adapted model renders `NEW_PROMPT` — a composition that appears in no training caption — at two seeds; the "
@@ -746,12 +753,12 @@ TEMPLATE = {
                 "## 10. Your turn — change one thing: the number of sampling steps\n\n"
                 "**What to notice (Section 9):** the reload parity line, the GPU memory with the reloaded pipeline and after its "
                 "release, and the list of files under `outputs/`.\n\n"
-                "<details><summary>Check your reasoning</summary>Exactly, on the same runtime. In "
+                "<details><summary>Check your reasoning</summary>In every recorded run, exactly. In "
                 + RECORD
-                + " both differences were 0.0: the same bytes quantised the same way, the same embeddings and the same kernels "
+                + " and in " + COLAB + " both differences were 0.0: the same bytes quantised the same way, the same embeddings and the same kernels "
                 "give the same arithmetic. On a different GPU, driver or library build the numbers would differ slightly, which is "
                 "why parity is checked in one session. That run held 7.48 GB with the reloaded pipeline resident and did not "
-                "release it; this version releases it, and the printed memory should fall back to about 1 GB (the VAE and the CLIP scorer).</details>\n\n"
+                "release it (the Colab runs held 7.47 GB before their release); this version releases it, and the Colab runs of `6ea19d2e` and `54c8d314` printed 0.96 GB after the release (the VAE and the CLIP scorer).</details>\n\n"
                 "**Predict → Change one thing → Run → Observe → Explain.**\n\n"
                 "1. **Predict:** schnell is distilled to render in one to four steps. With one or two steps instead of four, will "
                 "the CLIP prompt similarity and the label accuracy of the pretrained model's images go up, down or stay put? Write "
@@ -765,10 +772,10 @@ TEMPLATE = {
                 "grid with one row per step count, each column one prompt.\n"
                 "5. **Explain:** what did fewer steps cost on each reading, what did they save in time, and how far apart must two "
                 "rows be before six images make the difference believable?\n\n"
-                "<details><summary>Check your reasoning</summary>No run of this activity is recorded yet, so compare your "
-                "prediction with what the cell printed rather than with a number here. Two things to check either way: the "
-                "4-step row should reproduce Section 6's frozen numbers (same model, prompts, seed and steps) when the runtime is "
-                "the same, which makes it the control row; and the time should fall roughly in proportion to the steps, because "
+                "<details><summary>Check your reasoning</summary>Compare your "
+                "prediction with what the cell printed; no number is quoted here. Two things to check either way: the "
+                "4-step row uses the same model, prompts, seed and steps as Section 6, so on the same runtime it is "
+                "the control row to compare with Section 6's frozen numbers; and whether the time fell roughly in proportion to the steps, as "
                 "every step is one pass of the 12 B transformer. Distillation is what lets few steps work at all, so a small "
                 "change between rows is a plausible outcome, and with six images per row a difference of one correct label is "
                 "0.167 of label accuracy.</details>"
@@ -781,12 +788,15 @@ TEMPLATE = {
         "**What to notice (Section 10):** if you ran the activity, whether the 4-step row matches Section 6 and how the "
         "readings and the seconds changed with fewer steps.\n\n"
         "Read your own Section 8 before concluding; the claim below is what the run is designed to test, not a result stated in "
-        "advance. If the test flow-matching loss fell and the generations moved towards the held-out photographs, a LoRA of nine "
-        "million parameters trained for about 17 minutes on 36 photographs over a 4-bit 12 B base has taught the "
+        "advance. In " + COLAB + " the test flow-matching loss fell (0.795 → 0.506 in each); the CLIP readings of the generations moved "
+        "little in the first two (label accuracy 0.667 → 0.667, mean reference similarity 71.95 → 71.89 and → 72.55) and more in the third (label accuracy 0.667 → 0.833, mean reference similarity 71.95 → 72.99); this can vary between runs. If the test flow-matching loss falls "
+        "and the generations move towards the held-out photographs, a LoRA of nine "
+        "million parameters trained for 15.6 to 18.1 minutes (the recorded Colab runs) on 36 photographs over a 4-bit 12 B base has taught the "
         "rectified-flow transformer something about a narrow visual domain from a handful of captioned images on a 16 GB GPU, "
         "measured on identical inputs before and after, and the artifact that carries the change is 37 MB. Check the "
-        "per-species rows: in the recorded run of the previous version two of the six species' reference similarities fell "
-        "while the mean rose.\n\n"
+        "per-species rows: in each recorded run some species' reference similarities fell and others rose (three and three in the Colab runs of `d26eb848` and `6ea19d2e`, two and four in the run of `54c8d314`), "
+        "and Song Sparrow and American Goldfinch changed direction between Colab runs, so the means hide "
+        "movement in both directions, and the split can vary between runs; the earlier Kaggle run of blob `52226812` showed two falling while the mean rose.\n\n"
         "The numbers are sample-sanity evidence. A flow-matching loss is the training objective, not a quality score; CLIP similarity "
         "and CLIP's nearest-caption vote are a frozen model's opinion, not a human judgement, and CLIP itself has biases about what a "
         "species name looks like; six images per model from one seeded run give no dispersion estimate; and nothing here measures "
@@ -803,7 +813,7 @@ TEMPLATE = {
         "**Run-to-run variability.** The seeds fix the data split, the noise, the noise levels and the generation seeds, not "
         "the arithmetic: 4-bit matrix multiplications, attention and float16 autocast are not bit-reproducible across GPU "
         "models, drivers and library builds. A run on another runtime gives slightly different losses, images and CLIP "
-        "readings — enough to flip a borderline nearest-caption vote — while reload parity within one session stays exact.\n\n"
+        "readings — enough to flip a borderline nearest-caption vote — while reload parity within one session was exact (0.0) in every recorded run.\n\n"
         "Three things to carry to real data. **Captions are the contract:** the adapter learns the association between the "
         "caption text and the images; a caption that does not describe its image, or one caption for very different images, "
         "teaches noise. **Held-out photographs, known captions:** the split is stratified within each caption, so every "
@@ -888,17 +898,14 @@ TEMPLATE = {
         "- **Uncertainty or failure mode:** which species moved the other way? What did your Section 10 run change?\n"
         "- **Limitations:** what does this run *not* show (see Interpretation and limits)?\n\n"
         "## References\n\n"
-        "- Repository README: https://github.com/kurtvalcorza/flux-schnell-generation-pipeline/blob/main/README.md\n"
-        "- Repository model card: https://github.com/kurtvalcorza/flux-schnell-generation-pipeline/blob/main/MODEL_CARD.md\n"
-        "- Weights notes (identity, mirror staging, byte-identity evidence): https://github.com/kurtvalcorza/flux-schnell-generation-pipeline/blob/main/docs/WEIGHTS.md\n"
-        "- Hugging Face model repository (identity of record): https://huggingface.co/black-forest-labs/FLUX.1-schnell (revision `{MODEL_REVISION}`)\n"
-        "- Ungated mirror the bytes are staged from: https://huggingface.co/unsloth/FLUX.1-schnell (revision `9df3faa7ae3b6ddf0b2b69bb78616372897cc65c`)\n"
-        "- Black Forest Labs (2024). Announcing Black Forest Labs — FLUX.1: https://blackforestlabs.ai/announcing-black-forest-labs/ ; reference code: https://github.com/black-forest-labs/flux\n"
-        "- Liu, X., Gong, C., Liu, Q. (2023). Flow straight and fast: Learning to generate and transfer data with rectified flow. ICLR: https://arxiv.org/abs/2209.03003\n"
-        "- Sauer, A., et al. (2024). Fast high-resolution image synthesis with latent adversarial diffusion distillation: https://arxiv.org/abs/2403.12015\n"
-        "- Dettmers, T., et al. (2023). QLoRA: Efficient finetuning of quantized LLMs. NeurIPS: https://arxiv.org/abs/2305.14314\n"
-        "- Hu, E. J., et al. (2022). LoRA: Low-rank adaptation of large language models. ICLR: https://arxiv.org/abs/2106.09685\n"
-        "- Cherti, M., et al. (2023). Reproducible scaling laws for contrastive language-image learning. CVPR (the LAION CLIP scorer): https://arxiv.org/abs/2212.07143\n"
-        "- DIMER Notebook Specification 2.2 and Model Card Specification 1.1 (fleet specs in the ml-worker repository)\n"
+        "[1] Black Forest Labs, \"Announcing Black Forest Labs\" (FLUX.1), 2024; reference code black-forest-labs/flux. [Online]. Available: https://blackforestlabs.ai/announcing-black-forest-labs/; https://github.com/black-forest-labs/flux\n\n"
+        "[2] Black Forest Labs, \"FLUX.1-schnell\" (identity of record, revision `{MODEL_REVISION}`), Hugging Face; bytes staged from the ungated mirror unsloth/FLUX.1-schnell (revision `9df3faa7ae3b6ddf0b2b69bb78616372897cc65c`). [Online]. Available: https://huggingface.co/black-forest-labs/FLUX.1-schnell; https://huggingface.co/unsloth/FLUX.1-schnell\n\n"
+        "[3] X. Liu, C. Gong, and Q. Liu, \"Flow straight and fast: Learning to generate and transfer data with rectified flow,\" in *Proc. Int. Conf. Learn. Represent. (ICLR)*, 2023. [Online]. Available: https://arxiv.org/abs/2209.03003\n\n"
+        "[4] A. Sauer et al., \"Fast high-resolution image synthesis with latent adversarial diffusion distillation,\" arXiv:2403.12015, 2024. [Online]. Available: https://arxiv.org/abs/2403.12015\n\n"
+        "[5] T. Dettmers, A. Pagnoni, A. Holtzman, and L. Zettlemoyer, \"QLoRA: Efficient finetuning of quantized LLMs,\" in *Proc. Adv. Neural Inf. Process. Syst. (NeurIPS)*, 2023. [Online]. Available: https://arxiv.org/abs/2305.14314\n\n"
+        "[6] E. J. Hu et al., \"LoRA: Low-rank adaptation of large language models,\" in *Proc. Int. Conf. Learn. Represent. (ICLR)*, 2022. [Online]. Available: https://arxiv.org/abs/2106.09685\n\n"
+        "[7] M. Cherti et al., \"Reproducible scaling laws for contrastive language-image learning,\" in *Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR)*, 2023 (the LAION CLIP scorer). [Online]. Available: https://arxiv.org/abs/2212.07143\n\n"
+        "[8] K. Valcorza, \"flux-schnell-generation-pipeline: README, model card and weights notes,\" GitHub repository. [Online]. Available: https://github.com/kurtvalcorza/flux-schnell-generation-pipeline/blob/main/MODEL_CARD.md; https://github.com/kurtvalcorza/flux-schnell-generation-pipeline/blob/main/README.md; https://github.com/kurtvalcorza/flux-schnell-generation-pipeline/blob/main/docs/WEIGHTS.md\n\n"
+        "[9] DIMER Notebook Specification 2.5 and Model Card Specification 1.1, fleet specifications in the ml-worker repository.\n"
     ),
 }
