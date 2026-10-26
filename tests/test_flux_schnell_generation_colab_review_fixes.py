@@ -406,7 +406,7 @@ def test_section_4_cancelled_upload_is_named(nb: dict, monkeypatch: pytest.Monke
     colab.__path__ = []
     colab.files = types.SimpleNamespace(upload=lambda: {})
     monkeypatch.setitem(sys.modules, "google.colab", colab)
-    with pytest.raises(ValueError, match=r"Upload exactly one \.zip .* \(got 0 files; a cancelled upload gives 0\)"):
+    with pytest.raises(ValueError, match=r"^\(no file\): upload exactly one \.zip .* \(got 0 files; a cancelled upload gives 0\)"):
         exec(compile(_section_4(nb, use_byod=True), "section-4", "exec"), _package_namespace())
 
 
