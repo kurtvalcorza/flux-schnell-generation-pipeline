@@ -1,0 +1,72 @@
+{
+  "repo": "flux-schnell-generation-pipeline",
+  "sha": "34bec8682aae054830bc57436116df11b8702435",
+  "notebook": "tutorials/flux_schnell_generation_colab.ipynb",
+  "blob": "3db0f7e3c26d832bc11997b361fa9bc5a544eaf6",
+  "gpu": "T4",
+  "session": "suite-flux-34bec86-828e",
+  "started_utc": "2026-10-29T12:08:42+00:00",
+  "runner": "Colab CLI `colab exec -f` on a fresh session (not a browser Run all)",
+  "overrides": [
+    {
+      "name": "USE_BYOD",
+      "from": "False",
+      "to": "True"
+    },
+    {
+      "name": "BYOD_PATH",
+      "from": "''",
+      "to": "'/etc/hostname'"
+    }
+  ],
+  "run_copy_blob": "4a0b924dfa304e0b39e8b5d23e827a13b1058d0f",
+  "run_copy_sha256": "173aa7c3393bff69384f45bba2e74a18ce30945b55fed2772a90477bd3123fb7",
+  "run_copy_note": "refusal run: the run copy is the committed notebook with the listed assignment overrides, cut immediately after the refusal cell and re-serialised (nbformat layout); input_unchanged compares against that copy",
+  "truncated_after_cell": "flux_schnell_generation-17",
+  "refusal_cell_ref": "flux_schnell_generation-17",
+  "refusal_cell_index": 8,
+  "cells_dropped": 13,
+  "code_cells_dropped": 6,
+  "original_sha256": "a113d52258045924afa46ff588becdb2fad6398ccd4df542376e1d8ef909d476",
+  "status": "[suite-flux-34bec86-828e] gpu-t4-s-usw4b1-2p9i4hck6o3ph | Hardware: T4 | Shape: Standard | Variant: GPU | Status: IDLE",
+  "exec_exit_code": 0,
+  "stopped": true,
+  "stop_verified": true,
+  "wall_s": 723.0,
+  "input_unchanged": true,
+  "executed_file": "flux_schnell_generation_colab_34bec86_colab-cli-t4_output.ipynb",
+  "log_cells": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+  ],
+  "log_total": 8,
+  "code_cells": 8,
+  "executed_cells": 5,
+  "errors": [
+    {
+      "cell": "flux_schnell_generation-17",
+      "ename": "IsolatedCellRefusal",
+      "evalue": "hostname: ValueError: hostname is not a zip archive: give one .zip holding captions.csv and the image files; fix the file, then run this cell and every cell after it again (the earlier results of this session and their outputs/ files were removed)."
+    }
+  ],
+  "execution_counts": [],
+  "sequential": null,
+  "executed_sha256": "dac38f9e47eeac5f1b5af4b05f433970c42dc1bad97651f5536b1830f0a7e838",
+  "log_sequential_complete": true,
+  "mode": "expect_refusal",
+  "refusal_line": "Refused: hostname: ValueError: hostname is not a zip archive: give one .zip holding captions.csv and the image files; fix the file, then run this cell and every cell after it again (the earlier results of this session and their outputs/ files were removed).",
+  "halting_cell_index": 8,
+  "halting_cell_id": "flux_schnell_generation-17",
+  "error_cells": [
+    8
+  ],
+  "refusal_fail_reasons": [],
+  "refusal_ok": true,
+  "verdict": "PASS"
+}
